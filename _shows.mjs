@@ -1,15 +1,3 @@
-// =============================================================
-// Contact lookup — match manually-added / bulk-uploaded people
-// against HubSpot so sponsors & speakers get a Record ID (badging
-// scan ID) and any known details.
-//
-//   GET  /api/lookup?email=jane@acme.com   -> single match or null
-//   POST /api/lookup   { emails:[...] }     -> { "jane@acme.com": {...}, ... }
-//
-// Match key is EMAIL (the reliable badging identifier).
-// Returns: id (Record ID), firstname, lastname, email, company
-// (primary associated company), jobtitle, dietary, accessibility.
-// =============================================================
 const TOKEN =
   process.env.HUBSPOT_TOKEN ||
   process.env.HUBSPOT_PRIVATE_APP_TOKEN ||
@@ -60,7 +48,6 @@ const shape = (r, names) => {
   };
 };
 
-// Look up a batch of emails; returns { lowercasedEmail: contact }.
 async function lookupEmails(emails) {
   const clean = [...new Set(emails.map(e => (e || '').trim().toLowerCase()).filter(Boolean))];
   const found = {};

@@ -21,7 +21,7 @@ sponsors and speakers, so everyone is scannable. HubSpot matches keep their real
 only unmatched people get a generated one. Record ID / badge ID shows in every table and export,
 and on the check-in sheet.
 
-Badge prefixes are defined in `public/index.html` (`BADGE_PREFIX`) — e.g. GETS, DCLEG, MLS, LCCS.
+Badge prefixes are defined in `index.html` (`BADGE_PREFIX`) — e.g. GETS, DCLEG, MLS, LCCS.
 Adjust them there if you want different codes.
 
 Delegates come straight from HubSpot every time the page loads. Sponsors & speakers are stored
@@ -36,7 +36,7 @@ Same flow you used for the event tracker.
 1. **Put this folder in a Git repo** (GitHub) or drag-and-drop deploy.
    - If dragging: unzip, then drag the **contents** (so `netlify.toml`, `public/`, `netlify/`
      sit at the top level — not the wrapper folder). This avoids the "one level too deep" 404.
-2. In Netlify: **Add new site → Import / Deploy**, publish directory `public`,
+2. In Netlify: **Add new site → Import / Deploy**, publish directory `.` (repo root),
    functions directory `netlify/functions` (already set in `netlify.toml`).
 3. **Add the HubSpot token** — Site config → Environment variables → add:
    - Key: `HUBSPOT_TOKEN`
@@ -73,7 +73,7 @@ counts match exactly (e.g. DC Legal 24, CLS 33, LC Consumer 19, GETS 21, OLS 4).
 ```
 netlify.toml                       Netlify build + functions config
 package.json                       one dependency: @netlify/blobs
-public/index.html                  the whole portal (self-contained)
+index.html                         the whole portal (self-contained, served from repo root)
 netlify/functions/_shows.mjs       the 21 events → JI code mapping
 netlify/functions/attendees.mjs    GET /api/attendees  (live HubSpot delegate pull)
 netlify/functions/lookup.mjs       GET/POST /api/lookup (email -> HubSpot Record ID + details)
