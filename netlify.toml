@@ -1,6 +1,10 @@
-[build]
-  publish = "public"
-  functions = "netlify/functions"
-
-[functions]
-  node_bundler = "esbuild"
+{
+  "name": "mash-attendee-portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mash Media ops portal — who's attending (delegates, sponsors, speakers)",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
