@@ -1,0 +1,10 @@
+{
+  "name": "mash-attendee-portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mash Media ops portal — who's attending (delegates, sponsors, speakers)",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
