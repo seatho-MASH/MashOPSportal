@@ -244,6 +244,13 @@ const scanOf=o=>o.scanId||o.hubspotId||'';
 function delNote(ev,rec){return ((S.store.notes||{})[ev]||{})[rec]||'';}
 function setDelNote(ev,rec,val){S.store.notes??={};(S.store.notes[ev]??={})[rec]=val;queueSave();}
 function cellInput(val,onSave,ph){const i=el('input','cellinput');i.value=val||'';if(ph)i.placeholder=ph;i.oninput=()=>onSave(i.value);return i;}
+// ---- multi-user merge: union items by id; same id -> local edit wins ----
+function _byId(a,b,deep){const m=new Map();(a||[]).forEach(x=>x&&m.set(x.id,x));(b||[]).forEach(x=>{if(!x)return;if(deep&&m.has(x.id)){const sv=m.get(x.id);m.set(x.id,{...x,contacts:_byId(sv.contacts,x.contacts,false)});}else m.set(x.id,x);});return [...m.values()];}
+function _lists(sv,lo,deep){sv=sv||{};lo=lo||{};const o={...sv};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]=_byId(sv[k],lo[k],deep);return o;}
+function _maps(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]={...(sv[k]||{}),...(lo[k]||{})};return o;}
+function _seenM(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)])){const a=sv[k]||{},b=lo[k]||{};o[k]={baseline:{...(a.baseline||{}),...(b.baseline||{})},added:{...(a.added||{}),...(b.added||{})}};}return o;}
+function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes)};}
+function isEditing(){const ae=document.activeElement;return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&$('#tabBody')&&$('#tabBody').contains(ae));}
 function sortRows(rows,mode){const r=[...rows];
   if(mode==='added-new')r.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
   else if(mode==='added-old')r.sort((a,b)=>(a.addedAt||'').localeCompare(b.addedAt||''));
@@ -280,19 +287,35 @@ async function loadStore(){
   try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; }
   catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{}}; }
 }
-let saveTimer;
+let saveTimer,saving=false;
 function queueSave(){
   clearsave();
   const chip=$('#saveChip'); chip.textContent='Saving…'; chip.className='savechip';
   saveTimer=setTimeout(async()=>{
+    saving=true;saveTimer=null;
     try{
       if(S.demo)throw new Error('demo');
-      await api('/api/store',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({sponsors:S.store.sponsors,speakers:S.store.speakers,delegates:S.store.delegates,seen:S.store.seen,notes:S.store.notes})});
+      let server={};try{server=await api('/api/store');}catch{}
+      const merged=mergeStore(server,S.store);
+      await api('/api/store',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(merged)});
       chip.textContent='Saved ✓'; chip.className='savechip ok';
     }catch{ chip.textContent=S.demo?'Preview — not saved':'Save failed'; chip.className='savechip'; }
-    setTimeout(()=>{chip.textContent='';},2500);
+    saving=false;
+    setTimeout(()=>{if(chip.textContent.indexOf('Saving')===-1)chip.textContent='';},2500);
   },500);
+}
+let syncTick=0;
+async function autoSync(){
+  if(S.demo||saving||saveTimer||isEditing())return;
+  try{
+    const server=await api('/api/store');
+    S.store=mergeStore(server,S.store);
+    syncTick++;
+    if(syncTick%2===0){await loadSummary();}
+    if(S.selected){delete S.attendees[S.selected];await loadAttendees(S.selected);}
+    if(!isEditing()){updateTabCounts();renderEvents();renderBody();}
+    const chip=$('#saveChip');if(chip&&!chip.textContent){chip.textContent='Synced';setTimeout(()=>{if(chip.textContent==='Synced')chip.textContent='';},1500);}
+  }catch{}
 }
 function clearsave(){if(saveTimer)clearTimeout(saveTimer);}
 
@@ -748,6 +771,7 @@ function applyTheme(t){document.documentElement.setAttribute('data-theme',t);try
   const today=new Date().toISOString().slice(0,10);
   const upcoming=[...S.events].filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0]||S.events[0];
   if(upcoming)selectEvent(upcoming.id);
+  setInterval(autoSync,30000);
 })();
 </script>
 </body>
