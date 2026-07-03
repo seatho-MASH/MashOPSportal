@@ -245,7 +245,7 @@ function delNote(ev,rec){return ((S.store.notes||{})[ev]||{})[rec]||'';}
 function setDelNote(ev,rec,val){S.store.notes??={};(S.store.notes[ev]??={})[rec]=val;queueSave();}
 function cellInput(val,onSave,ph){const i=el('input','cellinput');i.value=val||'';if(ph)i.placeholder=ph;i.oninput=()=>onSave(i.value);return i;}
 // ---- multi-user merge: union items by id; same id -> local edit wins ----
-function _byId(a,b,deep){const m=new Map();(a||[]).forEach(x=>x&&m.set(x.id,x));(b||[]).forEach(x=>{if(!x)return;if(deep&&m.has(x.id)){const sv=m.get(x.id);m.set(x.id,{...x,contacts:_byId(sv.contacts,x.contacts,false)});}else m.set(x.id,x);});return [...m.values()];}
+function _byId(a,b,deep){const m=new Map();(a||[]).forEach(x=>x&&m.set(x.id,x));(b||[]).forEach(x=>{if(!x)return;const sv=m.get(x.id);if(sv){const del=sv.deleted||x.deleted;m.set(x.id,deep?{...x,deleted:del,contacts:_byId(sv.contacts,x.contacts,false)}:{...x,deleted:del});}else m.set(x.id,x);});return [...m.values()];}
 function _lists(sv,lo,deep){sv=sv||{};lo=lo||{};const o={...sv};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]=_byId(sv[k],lo[k],deep);return o;}
 function _maps(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]={...(sv[k]||{}),...(lo[k]||{})};return o;}
 function _seenM(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)])){const a=sv[k]||{},b=lo[k]||{};o[k]={baseline:{...(a.baseline||{}),...(b.baseline||{})},added:{...(a.added||{}),...(b.added||{})}};}return o;}
@@ -415,11 +415,11 @@ async function selectEvent(id){
 function updateTabCounts(){
   const id=S.selected; if(!id)return;
   const liveN=(S.attendees[id]?S.attendees[id].length:(S.counts[id]||0));
-  const manN=((S.store.delegates||{})[id]||[]).length;
+  const manN=((S.store.delegates||{})[id]||[]).filter(d=>!d.deleted).length;
   $('#tabCountDel').textContent=(S.attendees[id]||S.counts[id]!=null)?(liveN+manN):'–';
-  $('#tabCountSpo').textContent=(S.store.sponsors[id]||[]).length;
-  $('#tabCountSpk').textContent=(S.store.speakers[id]||[]).length;
-  const sc=(S.store.sponsors[id]||[]).reduce((n,sp)=>n+sp.contacts.length,0);
+  $('#tabCountSpo').textContent=(S.store.sponsors[id]||[]).filter(x=>!x.deleted).length;
+  $('#tabCountSpk').textContent=(S.store.speakers[id]||[]).filter(x=>!x.deleted).length;
+  const sc=(S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).reduce((n,sp)=>n+sp.contacts.filter(c=>!c.deleted).length,0);
   $('#tabCountChk').textContent=liveN+manN+sc+(S.store.speakers[id]||[]).length;
 }
 
@@ -452,7 +452,7 @@ let delSearch='',delSort='name';
 function allDelegates(id){
   const _seen=(S.store.seen||{})[id]||{added:{}};
   const live=(S.attendees[id]||[]).map(a=>({...a,scanId:scanOf(a),manual:false,addedAt:(_seen.added||{})[a.id]||''}));
-  const man=((S.store.delegates||{})[id]||[]).map(d=>({...d,manual:true}));
+  const man=((S.store.delegates||{})[id]||[]).filter(d=>!d.deleted).map(d=>({...d,manual:true}));
   return [...live,...man];
 }
 function delegateAddCard(box,id){
@@ -511,7 +511,7 @@ function renderDelegates(box){
       <td>${esc(a.dietary)||'<span class=muted>—</span>'}</td>
       <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td class="noteCell"></td><td></td>`;
     tr.querySelector('.noteCell').appendChild(cellInput(delNote(id,a.id),v=>setDelNote(id,a.id,v),'Add note…'));
-    if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{S.store.delegates[id]=(S.store.delegates[id]||[]).filter(y=>y.id!==a.id);queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
+    if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{(S.store.delegates[id]||[]).forEach(y=>{if(y.id===a.id)y.deleted=true;});queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
     tbody.appendChild(tr);
   });
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
@@ -525,6 +525,7 @@ function renderSponsors(box){
   const id=S.selected;
   S.store.sponsors[id]??=[];
   const list=S.store.sponsors[id];
+  const _act=list.filter(x=>!x.deleted);
   const add=el('div','card-add');
   add.innerHTML='<div style="font-weight:600;margin-bottom:8px">Add a sponsor</div>';
   const g=el('div','grid2');
@@ -539,10 +540,10 @@ function renderSponsors(box){
   };
   add.append(g,btn);box.appendChild(add);
   const tb=el('div','toolbar');
-  tb.appendChild(el('div','muted',list.length+' sponsor'+(list.length===1?'':'s')+' · '+list.reduce((n,s)=>n+s.contacts.length,0)+' attendees'));
+  tb.appendChild(el('div','muted',_act.length+' sponsor'+(_act.length===1?'':'s')+' · '+_act.reduce((n,s)=>n+s.contacts.filter(c=>!c.deleted).length,0)+' attendees'));
   const ex=el('button','btn sm','Export sponsor attendees');
   ex.onclick=()=>{
-    const rows=[];list.forEach(s=>s.contacts.forEach(c=>rows.push({...c,sponsor:s.company,tier:s.tier})));
+    const rows=[];list.forEach(s=>{if(s.deleted)return;s.contacts.forEach(c=>{if(c.deleted)return;rows.push({...c,sponsor:s.company,tier:s.tier});});});
     download(id+'-sponsor-attendees.csv',toCSV(rows,[
       {label:'Type',get:()=>'Sponsor'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
       {label:'Sponsor',key:'sponsor'},{label:'Tier',key:'tier'},
@@ -550,16 +551,17 @@ function renderSponsors(box){
       {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
   };
   tb.appendChild(ex);box.appendChild(tb);
-  if(!list.length){box.appendChild(el('div','empty','<div class="big">No sponsors added yet</div>Add your event sponsors above, then log the people each is sending.'));return;}
-  [...list].sort((a,b)=>(a.company||'').localeCompare(b.company||'')).forEach(sp=>{
+  if(!_act.length){box.appendChild(el('div','empty','<div class="big">No sponsors added yet</div>Add your event sponsors above, then log the people each is sending.'));return;}
+  [..._act].sort((a,b)=>(a.company||'').localeCompare(b.company||'')).forEach(sp=>{
     const card=el('div','sponsor');
     const sh=el('div','sh');
     sh.innerHTML=`<div><span class="sn">${esc(sp.company)}</span> ${sp.tier?`<span class="pill">${esc(sp.tier)}</span>`:''}</div>`;
     const del=el('button','btn sm danger','Remove');
-    del.onclick=()=>{if(confirm('Remove sponsor "'+sp.company+'"?')){S.store.sponsors[id]=list.filter(x=>x.id!==sp.id);queueSave();updateTabCounts();renderSponsors(box);}};
+    del.onclick=()=>{if(confirm('Remove sponsor "'+sp.company+'"?')){sp.deleted=true;queueSave();updateTabCounts();renderSponsors(box);}};
     sh.appendChild(del);card.appendChild(sh);
-    if(!sp.contacts.length)card.appendChild(el('div','muted','<div style="padding:6px 0">No attendees logged yet.</div>'));
-    sp.contacts.forEach(c=>{
+    const _cts=sp.contacts.filter(c=>!c.deleted);
+    if(!_cts.length)card.appendChild(el('div','muted','<div style="padding:6px 0">No attendees logged yet.</div>'));
+    _cts.forEach(c=>{
       const a=el('div','att');a.style.flexWrap='wrap';
       const _id=scanOf(c)?(c.idSource==='generated'
           ?`<span class="tb spk" title="Generated badge ID — not in HubSpot">${esc(scanOf(c))}</span>`
@@ -570,7 +572,7 @@ function renderSponsors(box){
       const mk=(ph,key,flex)=>{const i=el('input');i.placeholder=ph;i.value=c[key]||'';i.style.flex=flex;i.oninput=()=>{c[key]=i.value;queueSave();};return i;};
       row.append(mk('Job title','jobtitle','1 1 120px'),mk('Email','email','1 1 150px'),mk('Dietary','dietary','1 1 110px'),mk('Accessibility','accessibility','1 1 110px'),mk('Notes','note','1 1 140px'));
       const x=el('button','btn sm ghost danger','Remove');
-      x.onclick=()=>{sp.contacts=sp.contacts.filter(y=>y.id!==c.id);queueSave();updateTabCounts();renderSponsors(box);};
+      x.onclick=()=>{c.deleted=true;queueSave();updateTabCounts();renderSponsors(box);};
       row.appendChild(x);a.append(head,row);card.appendChild(a);
     });
     const row=el('div','addrow');
@@ -599,6 +601,7 @@ function renderSpeakers(box){
   const id=S.selected;
   S.store.speakers[id]??=[];
   const list=S.store.speakers[id];
+  const _act=list.filter(x=>!x.deleted);
   const toggle=el('div','toolbar');
   const t1=el('button','btn sm'+(spkMode==='single'?' primary':''),'Add individually');
   const t2=el('button','btn sm'+(spkMode==='bulk'?' primary':''),'Bulk upload');
@@ -606,7 +609,7 @@ function renderSpeakers(box){
   t2.onclick=()=>{spkMode='bulk';renderSpeakers(box);};
   toggle.append(t1,t2,sortSelect(spkSort,v=>{spkSort=v;renderSpeakers(box);}));
   const ex=el('button','btn sm','Export CSV');ex.style.marginLeft='auto';
-  ex.onclick=()=>download(id+'-speakers.csv',toCSV(sortRows(list,spkSort),[
+  ex.onclick=()=>download(id+'-speakers.csv',toCSV(sortRows(_act,spkSort),[
     {label:'Type',get:()=>'Speaker'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},
     {label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Session',key:'session'},
@@ -659,17 +662,17 @@ function renderSpeakers(box){
     fileRow.append(file,btn);
     add.append(ta,fileRow);box.appendChild(add);
   }
-  if(!list.length){box.appendChild(el('div','empty','<div class="big">No speakers yet</div>Add them individually or bulk-upload a list.'));return;}
+  if(!_act.length){box.appendChild(el('div','empty','<div class="big">No speakers yet</div>Add them individually or bulk-upload a list.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
   t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th></th></tr></thead>';
   const tbody=el('tbody');
-  sortRows(list,spkSort).forEach(s=>{
+  sortRows(_act,spkSort).forEach(s=>{
     const tr=el('tr');
     tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td class="c-ses"></td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td>`;
     const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(s[key],v=>{s[key]=v;queueSave();}));};
     bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-ses','session');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','note');
     const td=el('td');const x=el('button','btn sm ghost','✕');
-    x.onclick=()=>{S.store.speakers[id]=list.filter(y=>y.id!==s.id);queueSave();updateTabCounts();renderSpeakers(box);};
+    x.onclick=()=>{s.deleted=true;queueSave();updateTabCounts();renderSpeakers(box);};
     td.appendChild(x);tr.appendChild(td);tbody.appendChild(tr);
   });
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
@@ -695,8 +698,8 @@ let chkSearch='',chkSort='name';
 function buildCheckinRows(id){
   const rows=[];
   allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',notes:delNote(id,a.id),note:a.manual?'walk-in':''}));
-  (S.store.sponsors[id]||[]).forEach(sp=>sp.contacts.forEach(c=>rows.push({type:'Sponsor',cls:'spo',scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
-  (S.store.speakers[id]||[]).forEach(s2=>rows.push({type:'Speaker',cls:'spk',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
+  (S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).forEach(sp=>sp.contacts.filter(c=>!c.deleted).forEach(c=>rows.push({type:'Sponsor',cls:'spo',scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
+  (S.store.speakers[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Speaker',cls:'spk',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
   return rows;
 }
 function renderCheckin(box){
