@@ -219,7 +219,7 @@ const S={
   events:FALLBACK_EVENTS, counts:{}, selected:null, tab:'delegates',
   brandFilter:new Set(), search:'',
   attendees:{}, loadingAttendees:false,
-  store:{sponsors:{},speakers:{},delegates:{}}, demo:false,
+  store:{sponsors:{},speakers:{},delegates:{},seen:{}}, demo:false,
 };
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -271,8 +271,8 @@ async function loadSummary(){
 }
 
 async function loadStore(){
-  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; }
-  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{}}; }
+  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; }
+  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{}}; }
 }
 let saveTimer;
 function queueSave(){
@@ -282,7 +282,7 @@ function queueSave(){
     try{
       if(S.demo)throw new Error('demo');
       await api('/api/store',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({sponsors:S.store.sponsors,speakers:S.store.speakers,delegates:S.store.delegates})});
+        body:JSON.stringify({sponsors:S.store.sponsors,speakers:S.store.speakers,delegates:S.store.delegates,seen:S.store.seen})});
       chip.textContent='Saved ✓'; chip.className='savechip ok';
     }catch{ chip.textContent=S.demo?'Preview — not saved':'Save failed'; chip.className='savechip'; }
     setTimeout(()=>{chip.textContent='';},2500);
@@ -297,11 +297,22 @@ async function loadAttendees(id){
     const d=await api('/api/attendees?event='+encodeURIComponent(id));
     S.attendees[id]=d.attendees||[];
     S.counts[id]=d.total;
+    if(!S.demo)recordSeen(id,S.attendees[id]);
   }catch(e){
     S.attendees[id]=S.demo?demoAttendees(id):[];
   }
   S.loadingAttendees=false;
   return S.attendees[id];
+}
+function recordSeen(id,list){
+  S.store.seen??={};
+  const cur=S.store.seen[id]||{baseline:null,added:{}};
+  cur.added=cur.added||{};
+  let changed=false;const today=new Date().toISOString().slice(0,10);
+  if(cur.baseline===null||cur.baseline===undefined){cur.baseline={};list.forEach(a=>{cur.baseline[a.id]=1;});changed=true;}
+  else{list.forEach(a=>{if(!cur.baseline[a.id]&&!cur.added[a.id]){cur.added[a.id]=today;changed=true;}});}
+  S.store.seen[id]=cur;
+  if(changed)queueSave();
 }
 function demoAttendees(id){
   const n=S.counts[id]||0,first=['Sophia','Heena','Marika','Victoria','Roisin','James','Priya','Tom','Aisha','Leo'],
@@ -410,7 +421,8 @@ function renderBody(){
 // ----- DELEGATES -----
 let delSearch='',delSort='name';
 function allDelegates(id){
-  const live=(S.attendees[id]||[]).map(a=>({...a,scanId:scanOf(a),manual:false}));
+  const _seen=(S.store.seen||{})[id]||{added:{}};
+  const live=(S.attendees[id]||[]).map(a=>({...a,scanId:scanOf(a),manual:false,addedAt:(_seen.added||{})[a.id]||''}));
   const man=((S.store.delegates||{})[id]||[]).map(d=>({...d,manual:true}));
   return [...live,...man];
 }
