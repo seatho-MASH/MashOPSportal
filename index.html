@@ -118,6 +118,7 @@
   .tb.del{color:var(--accent);border-color:rgba(0,212,170,.4)}
   .tb.spo{color:var(--pas);border-color:rgba(167,139,250,.4)}
   .tb.spk{color:var(--aaa);border-color:rgba(245,158,11,.4)}
+  .tb.stf{color:var(--en);border-color:rgba(56,189,248,.45)}
   .rid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--mut)}
   .cellinput{width:100%;min-width:70px;background:transparent;border:1px solid transparent;border-radius:6px;padding:4px 6px;font-size:12px;color:var(--txt);font-family:inherit}
   .cellinput:hover{border-color:var(--line2)}
@@ -182,6 +183,7 @@
         <div class="tab on" data-tab="delegates">Delegates<span class="b" id="tabCountDel">–</span></div>
         <div class="tab" data-tab="sponsors">Sponsors<span class="b" id="tabCountSpo">–</span></div>
         <div class="tab" data-tab="speakers">Speakers<span class="b" id="tabCountSpk">–</span></div>
+        <div class="tab" data-tab="staff">Staff<span class="b" id="tabCountStf">–</span></div>
         <div class="tab" data-tab="checkin">All Attendee Data<span class="b" id="tabCountChk">–</span></div>
       </div>
       <div class="body" id="tabBody"></div>
@@ -221,8 +223,8 @@ const BRAND_ORDER=['CN','EN','AAA','PAS','CONFEX'];
 const S={
   events:FALLBACK_EVENTS, counts:{}, selected:null, tab:'delegates',
   brandFilter:new Set(), search:'',
-  attendees:{}, loadingAttendees:false,
-  store:{sponsors:{},speakers:{},delegates:{},seen:{},notes:{}}, demo:false,
+  attendees:{}, loadingAttendees:false, staffRoster:null,
+  store:{sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{}}, demo:false,
 };
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -249,7 +251,7 @@ function _byId(a,b,deep){const m=new Map();(a||[]).forEach(x=>x&&m.set(x.id,x));
 function _lists(sv,lo,deep){sv=sv||{};lo=lo||{};const o={...sv};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]=_byId(sv[k],lo[k],deep);return o;}
 function _maps(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]={...(sv[k]||{}),...(lo[k]||{})};return o;}
 function _seenM(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)])){const a=sv[k]||{},b=lo[k]||{};o[k]={baseline:{...(a.baseline||{}),...(b.baseline||{})},added:{...(a.added||{}),...(b.added||{})}};}return o;}
-function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes)};}
+function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),staff:_lists(sv.staff,lo.staff,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes)};}
 function isEditing(){const ae=document.activeElement;return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&$('#tabBody')&&$('#tabBody').contains(ae));}
 function sortRows(rows,mode){const r=[...rows];
   if(mode==='added-new')r.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
@@ -284,8 +286,8 @@ async function loadSummary(){
 }
 
 async function loadStore(){
-  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; }
-  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{}}; }
+  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; S.store.staff??={}; }
+  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{}}; }
 }
 let saveTimer,saving=false;
 function queueSave(){
@@ -420,7 +422,9 @@ function updateTabCounts(){
   $('#tabCountSpo').textContent=(S.store.sponsors[id]||[]).filter(x=>!x.deleted).length;
   $('#tabCountSpk').textContent=(S.store.speakers[id]||[]).filter(x=>!x.deleted).length;
   const sc=(S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).reduce((n,sp)=>n+sp.contacts.filter(c=>!c.deleted).length,0);
-  $('#tabCountChk').textContent=liveN+manN+sc+(S.store.speakers[id]||[]).length;
+  const spkN=(S.store.speakers[id]||[]).filter(x=>!x.deleted).length;
+  const stfN=((S.store.staff||{})[id]||[]).filter(x=>!x.deleted).length;$('#tabCountStf').textContent=stfN;
+  $('#tabCountChk').textContent=liveN+manN+sc+spkN+stfN;
 }
 
 // ---------- CSV ----------
@@ -444,6 +448,7 @@ function renderBody(){
   if(S.tab==='delegates')renderDelegates(box);
   else if(S.tab==='sponsors')renderSponsors(box);
   else if(S.tab==='speakers')renderSpeakers(box);
+  else if(S.tab==='staff')renderStaff(box);
   else renderCheckin(box);
 }
 
@@ -700,6 +705,7 @@ function buildCheckinRows(id){
   allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',notes:delNote(id,a.id),note:a.manual?'walk-in':''}));
   (S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).forEach(sp=>sp.contacts.filter(c=>!c.deleted).forEach(c=>rows.push({type:'Sponsor',cls:'spo',scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
   (S.store.speakers[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Speaker',cls:'spk',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
+  ((S.store.staff||{})[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Staff',cls:'stf',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company||'',email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.external?'external':'staff'}));
   return rows;
 }
 function renderCheckin(box){
@@ -748,6 +754,87 @@ function renderCheckin(box){
   const applyFilter=()=>{const qq=si.value.toLowerCase();let sh=0;[...tbody.children].forEach(tr=>{const v=!qq||tr.dataset.s.includes(qq);tr.style.display=v?'':'none';if(v)sh++;});rc.textContent=sh+' of '+all.length+' · '+(counts.Delegate||0)+' delegates, '+(counts.Sponsor||0)+' sponsor, '+(counts.Speaker||0)+' speakers';chkSearch=si.value;};
   si.oninput=applyFilter;applyFilter();
 }
+// ----- STAFF -----
+let stfSearch='',stfSort='name';
+function demoStaff(){return [{id:'st1',name:'Mia Hodgson',firstname:'Mia',lastname:'Hodgson',email:'mhodgson@mashmedia.net',scanId:'ID780336149712',jobtitle:'Operations Manager',dietary:'',accessibility:''},{id:'st2',name:'Charlie Carter',firstname:'Charlie',lastname:'Carter',email:'ccarter@mashmedia.net',scanId:'ID773797615860',jobtitle:'Community Engagement Manager',dietary:'None',accessibility:'No'},{id:'st3',name:'Jude Brosnan',firstname:'Jude',lastname:'Brosnan',email:'jbrosnan@mashmedia.net',scanId:'ID682605451494',jobtitle:'Conference Producer',dietary:'',accessibility:''}];}
+async function loadStaff(){if(S.staffRoster)return S.staffRoster;try{const d=await api('/api/staff');S.staffRoster=d.staff||[];}catch{S.staffRoster=S.demo?demoStaff():[];}return S.staffRoster;}
+function renderStaff(box){
+  box.innerHTML='';
+  const id=S.selected;
+  S.store.staff??={};S.store.staff[id]??=[];
+  const list=S.store.staff[id];
+  box.appendChild(el('div','banner','Tick the Mash Media staff attending this event. They are added to All Attendee Data tagged <strong>Staff</strong>, with their scan IDs. Use the box below to add external staff or crew who are not in HubSpot.'));
+  if(!S.staffRoster){box.appendChild(el('div','empty','<span class="spinner"></span> Loading staff roster…'));loadStaff().then(()=>{if(S.tab==='staff')renderStaff(box);});return;}
+  const attending=()=>list.filter(x=>!x.deleted);
+  const attendingRoster=()=>new Set(attending().filter(x=>x.rosterId).map(x=>x.rosterId));
+  // external add card
+  const add=el('div','card-add');
+  add.innerHTML='<div style="font-weight:600;margin-bottom:8px">Add external staff / crew (not in HubSpot)</div>';
+  const g=el('div','grid2');
+  const f={name:field('Name','text','Full name'),job:field('Role / job title','text',''),em:field('Email','text',''),co:field('Company','text',''),di:field('Dietary requirements','text',''),ac:field('Accessibility requirements','text','')};
+  g.append(f.name.wrap,f.job.wrap,f.em.wrap,f.co.wrap,f.di.wrap,f.ac.wrap);
+  const abtn=el('button','btn primary sm','Add external');abtn.style.marginTop='8px';
+  abtn.onclick=async()=>{const name=f.name.input.value.trim();if(!name)return f.name.input.focus();
+    const email=f.em.input.value.trim();abtn.disabled=true;abtn.textContent='Checking HubSpot…';
+    const m=await lookupOne(email);
+    list.push({id:uid(),rosterId:'',external:true,scanId:m?(m.scanId||m.id):nextBadgeId(id),name,email,jobtitle:f.job.input.value.trim()||(m&&m.jobtitle)||'',company:f.co.input.value.trim()||(m&&m.company)||'',dietary:f.di.input.value.trim()||(m&&m.dietary)||'',accessibility:f.ac.input.value.trim()||(m&&m.accessibility)||'',note:'',addedAt:new Date().toISOString()});
+    queueSave();updateTabCounts();renderStaff(box);};
+  add.append(g,abtn);box.appendChild(add);
+  // toolbar
+  const tb=el('div','toolbar');
+  const si=el('input','grow');si.placeholder='Search staff by name, role, email…';si.value=stfSearch;
+  const rc=el('div','muted','');
+  const ex=el('button','btn sm','Export attending');
+  ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
+  const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{S.staffRoster=null;await loadStaff();renderStaff(box);};
+  tb.append(si,sortSelect(stfSort,v=>{stfSort=v;renderStaff(box);}),rc,ex,rf);box.appendChild(tb);
+  // attending (editable) section — rebuildable
+  const attWrap=el('div');box.appendChild(attWrap);
+  function renderAtt(){
+    attWrap.innerHTML='';
+    const att=attending();
+    if(!att.length)return;
+    attWrap.appendChild(el('div','grouphdr','ATTENDING THIS EVENT'));
+    const aw=el('div','tablewrap');const at=el('table');
+    at.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th></th></tr></thead>';
+    const atb=el('tbody');
+    sortRows(att,stfSort).forEach(st=>{
+      const tr=el('tr');
+      tr.innerHTML=`<td><strong>${esc(st.name)}</strong>${st.external?' <span class="pill">external</span>':''}</td><td class="rid">${esc(scanOf(st))||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${st.email?`<a href="mailto:${esc(st.email)}">${esc(st.email)}</a>`:'—'}</td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td>`;
+      const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(st[key],v=>{st[key]=v;queueSave();}));};
+      bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','note');
+      const td=el('td');const x=el('button','btn sm ghost','✕');x.title='Remove';x.onclick=()=>{st.deleted=true;queueSave();updateTabCounts();renderAtt();refreshCount();syncChecks();};td.appendChild(x);tr.appendChild(td);atb.appendChild(tr);
+    });
+    at.appendChild(atb);aw.appendChild(at);attWrap.appendChild(aw);
+  }
+  function refreshCount(){const shown=[...rtbody.children].filter(tr=>tr.style.display!=='none').length;rc.textContent=attending().length+' attending · '+S.staffRoster.length+' staff'+(stfSearch?(' · '+shown+' shown'):'');}
+  function syncChecks(){const set=attendingRoster();[...rtbody.querySelectorAll('input[type=checkbox]')].forEach(cb=>{cb.checked=set.has(cb.dataset.rid);});}
+  // roster checklist (built once; search filters in place)
+  box.appendChild(el('div','grouphdr','ALL STAFF — tick to add'));
+  const wrap=el('div','tablewrap');const t=el('table');
+  t.innerHTML='<thead><tr><th style="width:50px">Add</th><th>Name</th><th>Scan ID</th><th>Job title</th><th>Email</th></tr></thead>';
+  const rtbody=el('tbody');
+  const set0=attendingRoster();
+  sortRows(S.staffRoster,stfSort).forEach(pn=>{
+    const tr=el('tr');tr.dataset.s=(pn.name+' '+pn.email+' '+pn.jobtitle).toLowerCase();
+    const cb=el('input');cb.type='checkbox';cb.dataset.rid=pn.id;cb.checked=set0.has(pn.id);
+    cb.onchange=()=>{
+      if(cb.checked){list.push({id:uid(),rosterId:pn.id,external:false,scanId:pn.scanId,name:pn.name,firstname:pn.firstname,lastname:pn.lastname,email:pn.email,jobtitle:pn.jobtitle,company:'',dietary:pn.dietary||'',accessibility:pn.accessibility||'',note:'',addedAt:new Date().toISOString()});}
+      else{list.forEach(x=>{if(x.rosterId===pn.id&&!x.deleted)x.deleted=true;});}
+      queueSave();updateTabCounts();renderAtt();refreshCount();
+    };
+    const ctd=el('td');ctd.appendChild(cb);tr.appendChild(ctd);
+    tr.appendChild(el('td',null,`<strong>${esc(pn.name)}</strong>`));
+    tr.appendChild(el('td','rid',esc(pn.scanId)||'—'));
+    tr.appendChild(el('td',null,esc(pn.jobtitle)||'<span class=muted>—</span>'));
+    tr.appendChild(el('td',null,pn.email?`<a href="mailto:${esc(pn.email)}">${esc(pn.email)}</a>`:'—'));
+    rtbody.appendChild(tr);
+  });
+  t.appendChild(rtbody);wrap.appendChild(t);box.appendChild(wrap);
+  si.oninput=()=>{stfSearch=si.value;const q=stfSearch.toLowerCase();[...rtbody.children].forEach(tr=>{tr.style.display=(!q||tr.dataset.s.includes(q))?'':'none';});refreshCount();};
+  renderAtt();refreshCount();
+}
+
 // ---------- tabs ----------
 $('#tabs').querySelectorAll('.tab').forEach(t=>{
   t.onclick=async()=>{
