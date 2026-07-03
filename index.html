@@ -786,8 +786,10 @@ function renderStaff(box){
   const rc=el('div','muted','');
   const ex=el('button','btn sm','Export attending');
   ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
+  const exAll=el('button','btn sm','Export all staff');
+  exAll.onclick=()=>download('mash-staff-roster.csv',toCSV(sortRows(S.staffRoster||[],stfSort),[{label:'Name',key:'name'},{label:'Scan ID',key:'scanId'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},{label:'Dietary',key:'dietary'},{label:'Accessibility',key:'accessibility'}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{S.staffRoster=null;await loadStaff();renderStaff(box);};
-  tb.append(si,sortSelect(stfSort,v=>{stfSort=v;renderStaff(box);}),rc,ex,rf);box.appendChild(tb);
+  tb.append(si,sortSelect(stfSort,v=>{stfSort=v;renderStaff(box);}),rc,ex,exAll,rf);box.appendChild(tb);
   // attending (editable) section — rebuildable
   const attWrap=el('div');box.appendChild(attWrap);
   function renderAtt(){
