@@ -757,14 +757,15 @@ function renderCheckin(box){
 // ----- STAFF -----
 let stfSearch='',stfSort='name';
 function demoStaff(){return [{id:'st1',name:'Mia Hodgson',firstname:'Mia',lastname:'Hodgson',email:'mhodgson@mashmedia.net',scanId:'ID780336149712',jobtitle:'Operations Manager',dietary:'',accessibility:''},{id:'st2',name:'Charlie Carter',firstname:'Charlie',lastname:'Carter',email:'ccarter@mashmedia.net',scanId:'ID773797615860',jobtitle:'Community Engagement Manager',dietary:'None',accessibility:'No'},{id:'st3',name:'Jude Brosnan',firstname:'Jude',lastname:'Brosnan',email:'jbrosnan@mashmedia.net',scanId:'ID682605451494',jobtitle:'Conference Producer',dietary:'',accessibility:''}];}
-async function loadStaff(){if(S.staffRoster)return S.staffRoster;try{const d=await api('/api/staff');S.staffRoster=d.staff||[];}catch{S.staffRoster=S.demo?demoStaff():[];}return S.staffRoster;}
+let staffLoading=false,staffError=false;
+async function loadStaff(force){if(force){S.staffRoster=null;staffError=false;}if(S.staffRoster||staffLoading)return S.staffRoster;staffLoading=true;try{const d=await api('/api/staff');S.staffRoster=(d.staff&&d.staff.length)?d.staff:(S.demo?demoStaff():[]);staffError=false;}catch{S.staffRoster=S.demo?demoStaff():null;staffError=!S.demo;}staffLoading=false;return S.staffRoster;}
 function renderStaff(box){
   box.innerHTML='';
   const id=S.selected;
   S.store.staff??={};S.store.staff[id]??=[];
   const list=S.store.staff[id];
   box.appendChild(el('div','banner','Tick the Mash Media staff attending this event. They are added to All Attendee Data tagged <strong>Staff</strong>, with their scan IDs. Use the box below to add external staff or crew who are not in HubSpot.'));
-  if(!S.staffRoster){box.appendChild(el('div','empty','<span class="spinner"></span> Loading staff roster…'));loadStaff().then(()=>{if(S.tab==='staff')renderStaff(box);});return;}
+  if(!S.staffRoster){if(staffError){box.appendChild(el('div','empty','<div class="big">Couldn\'t load the staff list</div>HubSpot was momentarily unavailable.'));const rb=el('button','btn sm','Retry');rb.onclick=()=>loadStaff(true).then(()=>{if(S.tab==='staff')renderStaff(box);});box.appendChild(rb);return;}box.appendChild(el('div','empty','<span class="spinner"></span> Loading staff roster…'));if(!staffLoading)loadStaff().then(()=>{if(S.tab==='staff')renderStaff(box);});return;}
   const attending=()=>list.filter(x=>!x.deleted);
   const attendingRoster=()=>new Set(attending().filter(x=>x.rosterId).map(x=>x.rosterId));
   // external add card
@@ -788,7 +789,7 @@ function renderStaff(box){
   ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
   const exAll=el('button','btn sm','Export all staff');
   exAll.onclick=()=>download('mash-staff-roster.csv',toCSV(sortRows(S.staffRoster||[],stfSort),[{label:'Name',key:'name'},{label:'Scan ID',key:'scanId'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},{label:'Dietary',key:'dietary'},{label:'Accessibility',key:'accessibility'}]));
-  const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{S.staffRoster=null;await loadStaff();renderStaff(box);};
+  const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{await loadStaff(true);renderStaff(box);};
   tb.append(si,sortSelect(stfSort,v=>{stfSort=v;renderStaff(box);}),rc,ex,exAll,rf);box.appendChild(tb);
   // attending (editable) section — rebuildable
   const attWrap=el('div');box.appendChild(attWrap);
