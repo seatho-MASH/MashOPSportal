@@ -27,7 +27,7 @@
   html,body{margin:0;background:var(--bg);color:var(--txt);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px}
   a{color:inherit}
-  .wrap{max-width:1280px;margin:0 auto;padding:20px 22px 60px}
+  .wrap{max-width:min(1800px,96vw);margin:0 auto;padding:20px 22px 60px}
   header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;justify-content:space-between;margin-bottom:6px}
   h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
   .sub{color:var(--mut);font-size:13px;margin:2px 0 16px}
@@ -119,6 +119,9 @@
   .tb.spo{color:var(--pas);border-color:rgba(167,139,250,.4)}
   .tb.spk{color:var(--aaa);border-color:rgba(245,158,11,.4)}
   .rid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--mut)}
+  .cellinput{width:100%;min-width:70px;background:transparent;border:1px solid transparent;border-radius:6px;padding:4px 6px;font-size:12px;color:var(--txt);font-family:inherit}
+  .cellinput:hover{border-color:var(--line2)}
+  .cellinput:focus{border-color:var(--accent2);background:var(--bg2);outline:none}
   .printhdr{display:none}
   .chk{width:16px;height:16px;border:1.5px solid var(--dim);border-radius:4px;display:inline-block}
   @media print{
@@ -219,7 +222,7 @@ const S={
   events:FALLBACK_EVENTS, counts:{}, selected:null, tab:'delegates',
   brandFilter:new Set(), search:'',
   attendees:{}, loadingAttendees:false,
-  store:{sponsors:{},speakers:{},delegates:{},seen:{}}, demo:false,
+  store:{sponsors:{},speakers:{},delegates:{},seen:{},notes:{}}, demo:false,
 };
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -238,6 +241,9 @@ function nextBadgeId(id){return badgePrefix(id)+String(maxBadgeNum(id)+1).padSta
 const fmtDate=iso=>{try{return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}catch{return iso;}};
 const fmtAdded=iso=>{if(!iso)return '';try{return new Date(iso).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'});}catch{return '';}};
 const scanOf=o=>o.scanId||o.hubspotId||'';
+function delNote(ev,rec){return ((S.store.notes||{})[ev]||{})[rec]||'';}
+function setDelNote(ev,rec,val){S.store.notes??={};(S.store.notes[ev]??={})[rec]=val;queueSave();}
+function cellInput(val,onSave,ph){const i=el('input','cellinput');i.value=val||'';if(ph)i.placeholder=ph;i.oninput=()=>onSave(i.value);return i;}
 function sortRows(rows,mode){const r=[...rows];
   if(mode==='added-new')r.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
   else if(mode==='added-old')r.sort((a,b)=>(a.addedAt||'').localeCompare(b.addedAt||''));
@@ -271,8 +277,8 @@ async function loadSummary(){
 }
 
 async function loadStore(){
-  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; }
-  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{}}; }
+  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; }
+  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{}}; }
 }
 let saveTimer;
 function queueSave(){
@@ -282,7 +288,7 @@ function queueSave(){
     try{
       if(S.demo)throw new Error('demo');
       await api('/api/store',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({sponsors:S.store.sponsors,speakers:S.store.speakers,delegates:S.store.delegates,seen:S.store.seen})});
+        body:JSON.stringify({sponsors:S.store.sponsors,speakers:S.store.speakers,delegates:S.store.delegates,seen:S.store.seen,notes:S.store.notes})});
       chip.textContent='Saved ✓'; chip.className='savechip ok';
     }catch{ chip.textContent=S.demo?'Preview — not saved':'Save failed'; chip.className='savechip'; }
     setTimeout(()=>{chip.textContent='';},2500);
@@ -461,7 +467,7 @@ function renderDelegates(box){
     {label:'Type',key:'type'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'First name',key:'firstname'},{label:'Last name',key:'lastname'},
     {label:'Email',key:'email'},{label:'Company',key:'company'},{label:'Job title',key:'jobtitle'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',get:r=>delNote(id,r.id)}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload from HubSpot';
   rf.onclick=async()=>{delete S.attendees[id];await loadAttendees(id);updateTabCounts();renderDelegates(box);};
   tb.append(si,sortSelect(delSort,v=>{delSort=v;renderDelegates(box);}),rc,ex,rf);
@@ -469,7 +475,7 @@ function renderDelegates(box){
   if(!all.length){box.appendChild(el('div','empty','<div class="big">No confirmed delegates yet</div>They will appear here as joining instructions are signed, or add walk-ins above.'));return;}
   const rows=sortRows(all,delSort);
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th></th></tr></thead>';
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th></th></tr></thead>';
   const tbody=el('tbody');
   rows.forEach(a=>{
     const tr=el('tr');tr.dataset.s=(a.name+' '+a.company+' '+a.jobtitle+' '+a.email).toLowerCase();
@@ -480,7 +486,8 @@ function renderDelegates(box){
       <td>${esc(a.company)||'<span class=muted>—</span>'}</td>
       <td>${a.email?`<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>`:'<span class=muted>—</span>'}</td>
       <td>${esc(a.dietary)||'<span class=muted>—</span>'}</td>
-      <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td></td>`;
+      <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td class="noteCell"></td><td></td>`;
+    tr.querySelector('.noteCell').appendChild(cellInput(delNote(id,a.id),v=>setDelNote(id,a.id,v),'Add note…'));
     if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{S.store.delegates[id]=(S.store.delegates[id]||[]).filter(y=>y.id!==a.id);queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
     tbody.appendChild(tr);
   });
@@ -517,7 +524,7 @@ function renderSponsors(box){
       {label:'Type',get:()=>'Sponsor'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
       {label:'Sponsor',key:'sponsor'},{label:'Tier',key:'tier'},
       {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},
-      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'}]));
+      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
   };
   tb.appendChild(ex);box.appendChild(tb);
   if(!list.length){box.appendChild(el('div','empty','<div class="big">No sponsors added yet</div>Add your event sponsors above, then log the people each is sending.'));return;}
@@ -530,16 +537,18 @@ function renderSponsors(box){
     sh.appendChild(del);card.appendChild(sh);
     if(!sp.contacts.length)card.appendChild(el('div','muted','<div style="padding:6px 0">No attendees logged yet.</div>'));
     sp.contacts.forEach(c=>{
-      const a=el('div','att');
-      const _x=[c.dietary?('Dietary: '+esc(c.dietary)):'',c.accessibility?('Access: '+esc(c.accessibility)):''].filter(Boolean).join(' · ');
+      const a=el('div','att');a.style.flexWrap='wrap';
       const _id=scanOf(c)?(c.idSource==='generated'
           ?`<span class="tb spk" title="Generated badge ID — not in HubSpot">${esc(scanOf(c))}</span>`
           :`<span class="tb del" title="HubSpot Scan ID">${esc(scanOf(c))}</span>`)
         :`<span class="pill">no ID</span>`;
-      a.innerHTML=`<div class="ai"><strong>${esc(c.name)}</strong> ${_id} ${c.jobtitle?`· <span class="muted">${esc(c.jobtitle)}</span>`:''} ${c.email?`· <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}${_x?` <span class="muted">· ${_x}</span>`:''}</div>`;
-      const x=el('button','btn sm ghost','✕');
+      const head=el('div');head.style.cssText='flex:1 1 100%';head.innerHTML=`<strong>${esc(c.name)}</strong> ${_id}`;
+      const row=el('div','addrow');row.style.cssText='flex:1 1 100%;margin-top:4px';
+      const mk=(ph,key,flex)=>{const i=el('input');i.placeholder=ph;i.value=c[key]||'';i.style.flex=flex;i.oninput=()=>{c[key]=i.value;queueSave();};return i;};
+      row.append(mk('Job title','jobtitle','1 1 120px'),mk('Email','email','1 1 150px'),mk('Dietary','dietary','1 1 110px'),mk('Accessibility','accessibility','1 1 110px'),mk('Notes','note','1 1 140px'));
+      const x=el('button','btn sm ghost danger','Remove');
       x.onclick=()=>{sp.contacts=sp.contacts.filter(y=>y.id!==c.id);queueSave();updateTabCounts();renderSponsors(box);};
-      a.appendChild(x);card.appendChild(a);
+      row.appendChild(x);a.append(head,row);card.appendChild(a);
     });
     const row=el('div','addrow');
     const n=el('input');n.placeholder='Name';n.style.flex='1 1 110px';
@@ -578,7 +587,7 @@ function renderSpeakers(box){
     {label:'Type',get:()=>'Speaker'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},
     {label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Session',key:'session'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
   toggle.appendChild(ex);
   box.appendChild(toggle);
   if(spkMode==='single'){
@@ -629,13 +638,13 @@ function renderSpeakers(box){
   }
   if(!list.length){box.appendChild(el('div','empty','<div class="big">No speakers yet</div>Add them individually or bulk-upload a list.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th></th></tr></thead>';
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th></th></tr></thead>';
   const tbody=el('tbody');
   sortRows(list,spkSort).forEach(s=>{
     const tr=el('tr');
-    tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td>${esc(s.jobtitle)||'—'}</td><td>${esc(s.company)||'—'}</td>
-      <td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td>${esc(s.session)||'—'}</td>
-      <td>${esc(s.dietary)||'—'}</td><td>${esc(s.accessibility)||'—'}</td>`;
+    tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td class="c-ses"></td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td>`;
+    const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(s[key],v=>{s[key]=v;queueSave();}));};
+    bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-ses','session');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','note');
     const td=el('td');const x=el('button','btn sm ghost','✕');
     x.onclick=()=>{S.store.speakers[id]=list.filter(y=>y.id!==s.id);queueSave();updateTabCounts();renderSpeakers(box);};
     td.appendChild(x);tr.appendChild(td);tbody.appendChild(tr);
@@ -662,9 +671,9 @@ function field(label,type,ph){
 let chkSearch='',chkSort='name';
 function buildCheckinRows(id){
   const rows=[];
-  allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',note:a.manual?'walk-in':''}));
-  (S.store.sponsors[id]||[]).forEach(sp=>sp.contacts.forEach(c=>rows.push({type:'Sponsor',cls:'spo',scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',note:sp.tier||''})));
-  (S.store.speakers[id]||[]).forEach(s2=>rows.push({type:'Speaker',cls:'spk',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',note:s2.session||''}));
+  allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',notes:delNote(id,a.id),note:a.manual?'walk-in':''}));
+  (S.store.sponsors[id]||[]).forEach(sp=>sp.contacts.forEach(c=>rows.push({type:'Sponsor',cls:'spo',scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
+  (S.store.speakers[id]||[]).forEach(s2=>rows.push({type:'Speaker',cls:'spk',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
   return rows;
 }
 function renderCheckin(box){
@@ -685,14 +694,14 @@ function renderCheckin(box){
     {label:'Type',key:'type'},{label:'Scan ID',key:'scanId'},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},
     {label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},
     {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},
-    {label:'Note',key:'note'}]));
+    {label:'Notes',key:'notes'},{label:'Detail',key:'note'}]));
   tb.append(pr,ex);
   box.appendChild(tb);
   const ph=el('div','printhdr',`<div class="pt2">${esc(ev?ev.name:'')} — All Attendee Data</div><div class="mt2">${ev?fmtDate(ev.date):''} · ${all.length} people · generated ${new Date().toLocaleString('en-GB')}</div>`);
   box.appendChild(ph);
   if(!all.length){box.appendChild(el('div','empty','<div class="big">Nobody to list yet</div>Delegates, sponsor attendees and speakers will appear here as they are added.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th style="width:34px">In</th><th>Name</th><th>Scan ID</th><th>Added</th><th>Type</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Note</th></tr></thead>';
+  t.innerHTML='<thead><tr><th style="width:34px">In</th><th>Name</th><th>Scan ID</th><th>Added</th><th>Type</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th>Detail</th></tr></thead>';
   const tbody=el('tbody');
   all.forEach(r=>{
     const tr=el('tr');tr.dataset.s=(r.name+' '+r.company+' '+r.jobtitle+' '+r.type).toLowerCase();
@@ -705,6 +714,7 @@ function renderCheckin(box){
       <td>${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:'<span class=muted>—</span>'}</td>
       <td>${esc(r.dietary)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.accessibility)||'<span class=muted>—</span>'}</td>
+      <td>${esc(r.notes)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.note)||'<span class=muted>—</span>'}</td>`;
     tbody.appendChild(tr);
   });
