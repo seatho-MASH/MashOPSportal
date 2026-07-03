@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mash Media — Attendee Portal</title>
+<style>
+  :root{
+    --bg:#0e1120; --bg2:#151a2e; --card:#1a2138; --card2:#212a45;
+    --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+    --txt:#e7ecf6; --mut:#93a0bd; --dim:#64728f;
+    --accent:#00d4aa; --accent2:#818cf8; --warn:#f59e0b; --bad:#f87171; --good:#34d399;
+    --cn:#00d4aa; --en:#38bdf8; --aaa:#f59e0b; --pas:#a78bfa; --confex:#fb7185;
+  }
+  html[data-theme="light"]{
+    --bg:#eef1f8; --bg2:#ffffff; --card:#ffffff; --card2:#f2f5fb;
+    --line:rgba(15,23,42,.10); --line2:rgba(15,23,42,.18);
+    --txt:#151b2e; --mut:#51607a; --dim:#8492ab;
+    --accent:#00b894; --accent2:#6366f1;
+  }
+  html[data-theme="light"] tr:hover td{background:rgba(0,0,0,.035)}
+  html[data-theme="light"] .side,html[data-theme="light"] .panel{box-shadow:0 1px 3px rgba(15,23,42,.06)}
+  html[data-theme="light"] .banner{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.25);color:#3b3f8f}
+  html[data-theme="light"] .btn:hover{background:#e7ecf6;border-color:#c3ccdd}
+  html[data-theme="light"] .evt:hover{background:#f2f5fb}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px}
+  a{color:inherit}
+  .wrap{max-width:1280px;margin:0 auto;padding:20px 22px 60px}
+  header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;justify-content:space-between;margin-bottom:6px}
+  h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
+  .sub{color:var(--mut);font-size:13px;margin:2px 0 16px}
+  .status{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
+  .btn{background:var(--card2);color:var(--txt);border:1px solid var(--line2);border-radius:8px;
+    padding:8px 12px;font-size:13px;cursor:pointer;transition:.15s}
+  .btn:hover{background:#2a3556;border-color:#3a4670}
+  .btn.primary{background:var(--accent);color:#062018;border-color:transparent;font-weight:600}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.sm{padding:5px 9px;font-size:12px;border-radius:7px}
+  .btn.ghost{background:transparent}
+  .btn.danger{color:var(--bad);border-color:rgba(248,113,113,.35)}
+  input,select,textarea{background:var(--bg2);border:1px solid var(--line2);color:var(--txt);
+    border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;outline:none}
+  input:focus,select,textarea:focus{border-color:var(--accent2)}
+  .layout{display:grid;grid-template-columns:320px 1fr;gap:18px;margin-top:10px}
+  @media(max-width:880px){.layout{grid-template-columns:1fr}}
+
+  /* event sidebar */
+  .side{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:12px;max-height:78vh;overflow:auto}
+  .side .filterrow{display:flex;gap:6px;margin-bottom:10px}
+  .side input{width:100%}
+  .brandchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+  .chip{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);
+    color:var(--mut);cursor:pointer;background:transparent;user-select:none}
+  .chip.on{color:#0b1020;font-weight:700;border-color:transparent}
+  .grouphdr{font-size:11px;letter-spacing:1px;color:var(--dim);margin:12px 4px 6px;font-weight:700}
+  .evt{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent}
+  .evt:hover{background:var(--card)}
+  .evt.sel{background:var(--card2);border-color:var(--line2)}
+  .evt .bar{width:3px;align-self:stretch;border-radius:3px;background:var(--dim)}
+  .evt .en{flex:1;min-width:0}
+  .evt .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .evt .dt{font-size:11px;color:var(--dim)}
+  .evt .ct{font-size:12px;font-weight:700;color:var(--txt);background:var(--bg);border:1px solid var(--line2);
+    border-radius:999px;min-width:26px;text-align:center;padding:2px 7px}
+
+  /* main panel */
+  .panel{background:var(--bg2);border:1px solid var(--line);border-radius:14px;min-height:60vh;overflow:hidden}
+  .phead{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;
+    align-items:center;gap:10px;justify-content:space-between}
+  .phead .pt{font-size:16px;font-weight:700}
+  .phead .pm{font-size:12px;color:var(--mut)}
+  .tabs{display:flex;gap:4px;padding:10px 14px 0}
+  .tab{padding:9px 16px;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;
+    border-radius:9px 9px 0 0;border:1px solid transparent;border-bottom:none}
+  .tab.on{color:var(--txt);background:var(--card);border-color:var(--line)}
+  .tab .b{display:inline-block;margin-left:7px;font-size:11px;background:var(--bg);border:1px solid var(--line2);
+    border-radius:999px;padding:1px 7px;color:var(--mut)}
+  .body{padding:16px 18px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  .toolbar .grow{flex:1;min-width:120px}
+  .muted{color:var(--mut)}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
+  th{color:var(--dim);font-size:11px;letter-spacing:.5px;text-transform:uppercase;position:sticky;top:0;background:var(--bg2)}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  .tablewrap{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--mut)}
+  .empty{padding:40px 20px;text-align:center;color:var(--dim)}
+  .empty .big{font-size:15px;color:var(--mut);margin-bottom:6px}
+  .spinner{display:inline-block;width:15px;height:15px;border:2px solid var(--line2);
+    border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* sponsor cards */
+  .sponsor{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  .sponsor .sh{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:6px}
+  .sponsor .sn{font-size:15px;font-weight:700}
+  .att{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line)}
+  .att .ai{flex:1}
+  .addrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .banner{background:rgba(129,140,248,.1);border:1px solid rgba(129,140,248,.3);color:#c7cdf7;
+    padding:10px 12px;border-radius:10px;font-size:12.5px;margin-bottom:12px}
+  .card-add{background:var(--card);border:1px dashed var(--line2);border-radius:12px;padding:14px;margin-bottom:16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  @media(max-width:600px){.grid2{grid-template-columns:1fr}}
+  .field label{display:block;font-size:11px;color:var(--dim);margin:0 0 3px 2px}
+  .field input,.field select{width:100%}
+  textarea{width:100%;min-height:90px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  .savechip{font-size:11px;color:var(--dim)}
+  .savechip.ok{color:var(--good)}
+
+  /* type badges + print */
+  .tb{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--line2)}
+  .tb.del{color:var(--accent);border-color:rgba(0,212,170,.4)}
+  .tb.spo{color:var(--pas);border-color:rgba(167,139,250,.4)}
+  .tb.spk{color:var(--aaa);border-color:rgba(245,158,11,.4)}
+  .rid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--mut)}
+  .printhdr{display:none}
+  .chk{width:16px;height:16px;border:1.5px solid var(--dim);border-radius:4px;display:inline-block}
+  @media print{
+    @page{margin:14mm}
+    body{background:#fff;color:#000;font-size:12px}
+    .side,.tabs,header.top,.toolbar,.savechip,.banner{display:none!important}
+    .layout{display:block;gap:0}
+    .panel,.side{border:none;background:#fff}
+    .wrap{max-width:none;padding:0}
+    .phead{border:none;padding:0 0 6px}
+    .pt{font-size:16px}
+    .tablewrap{max-height:none;overflow:visible;border:none;border-radius:0}
+    table{width:100%}
+    th{color:#000;background:#fff;border-bottom:1.5px solid #000}
+    td{border-bottom:1px solid #ccc}
+    a{color:#000;text-decoration:none}
+    .tb{border-color:#999;color:#000}
+    .chk{border-color:#000}
+    .printhdr{display:block!important;margin-bottom:8px}
+    .printhdr .pt2{font-size:18px;font-weight:700}
+    .printhdr .mt2{font-size:12px;color:#333}
+    tr{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Mash Media — Attendee Portal</h1>
+      <div class="sub">Who's attending, in one place — delegates live from HubSpot, plus sponsors &amp; speakers your team manages here.</div>
+    </div>
+    <div class="status">
+      <span class="dot" id="dot"></span><span id="statusText">Connecting…</span>
+      <button class="btn sm" id="themeBtn">Light</button>
+      <button class="btn sm" id="refreshBtn">Refresh</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- EVENT SIDEBAR -->
+    <aside class="side">
+      <div class="filterrow"><input id="evtSearch" placeholder="Search events…" /></div>
+      <div class="brandchips" id="brandChips"></div>
+      <div id="eventList"></div>
+    </aside>
+
+    <!-- MAIN PANEL -->
+    <section class="panel">
+      <div class="phead">
+        <div>
+          <div class="pt" id="evtName">Select an event</div>
+          <div class="pm" id="evtMeta">Pick an event on the left to see its attendees, sponsors and speakers.</div>
+        </div>
+        <div class="savechip" id="saveChip"></div>
+      </div>
+      <div class="tabs" id="tabs">
+        <div class="tab on" data-tab="delegates">Delegates<span class="b" id="tabCountDel">–</span></div>
+        <div class="tab" data-tab="sponsors">Sponsors<span class="b" id="tabCountSpo">–</span></div>
+        <div class="tab" data-tab="speakers">Speakers<span class="b" id="tabCountSpk">–</span></div>
+        <div class="tab" data-tab="checkin">All Attendee Data<span class="b" id="tabCountChk">–</span></div>
+      </div>
+      <div class="body" id="tabBody"></div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+// ---------- fallback event list (server overrides this on load) ----------
+const FALLBACK_EVENTS = [
+  {id:'cn-mc-ice',brand:'CN',name:'Masterclass – Internal Comms Events',short:'MC ICE',date:'2026-07-10'},
+  {id:'cn-cls',brand:'CN',name:'Creative Leaders Summit',short:'CLS',date:'2026-07-29'},
+  {id:'cn-mc-incentives',brand:'CN',name:'Masterclass – Incentives',short:'MC Incentives',date:'2026-08-11'},
+  {id:'cn-als',brand:'CN',name:'Agency Leaders Summit',short:'ALS',date:'2026-09-09'},
+  {id:'cn-mc-bea',brand:'CN',name:'Masterclass – Brand Events & Activations',short:'MC BE&A',date:'2026-10-08'},
+  {id:'cn-cels',brand:'CN',name:'Corporate Event Leaders Summit',short:'CELS',date:'2026-11-25'},
+  {id:'cn-mc-pe',brand:'CN',name:'Masterclass – Public Events',short:'MC PE',date:'2027-01-12'},
+  {id:'en-lc-consumer',brand:'EN',name:'Launch Club – Consumer Shows',short:'LC Consumer',date:'2026-06-26'},
+  {id:'en-lc-trade',brand:'EN',name:'Launch Club – Trade Shows',short:'LC Trade',date:'2026-08-26'},
+  {id:'en-ols',brand:'EN',name:'Operations Leaders Summit',short:'OLS',date:'2026-09-13'},
+  {id:'en-lc-conferences',brand:'EN',name:'Launch Club – Conferences',short:'LC Conferences',date:'2026-10-08'},
+  {id:'en-mls',brand:'EN',name:'Marketing Leaders Summit',short:'MLS',date:'2027-01-14'},
+  {id:'en-sls',brand:'EN',name:'Sales Leaders Summit',short:'SLS',date:'2027-01-14'},
+  {id:'en-lc-awards',brand:'EN',name:'Launch Club – Awards',short:'LC Awards',date:'2027-01-28'},
+  {id:'aaa-ls',brand:'AAA',name:'Leaders Summit',short:'LS',date:'2026-10-07'},
+  {id:'aaa-eps',brand:'AAA',name:'Event Producers Summit',short:'EPS',date:'2027-01-21'},
+  {id:'pas-dc-legal',brand:'PAS',name:'Diners Club – Legal',short:'DC Legal',date:'2026-06-11'},
+  {id:'pas-dc-financial',brand:'PAS',name:'Diners Club – Financial & Prof. Services',short:'DC Financial',date:'2026-09-10'},
+  {id:'pas-dc-medical',brand:'PAS',name:'Diners Club – Medical',short:'DC Medical',date:'2026-11-10'},
+  {id:'pas-dc-hnwi',brand:'PAS',name:'Diners Club – HNWI',short:'DC HNWI',date:'2027-01-14'},
+  {id:'cfx-gets',brand:'CONFEX',name:'GETS',short:'GETS',date:'2026-07-09'},
+];
+const BRAND_COLORS={CN:'var(--cn)',EN:'var(--en)',AAA:'var(--aaa)',PAS:'var(--pas)',CONFEX:'var(--confex)'};
+const BRAND_ORDER=['CN','EN','AAA','PAS','CONFEX'];
+
+// ---------- state ----------
+const S={
+  events:FALLBACK_EVENTS, counts:{}, selected:null, tab:'delegates',
+  brandFilter:new Set(), search:'',
+  attendees:{}, loadingAttendees:false,
+  store:{sponsors:{},speakers:{},delegates:{}}, demo:false,
+};
+const $=s=>document.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+// Badge ID for people NOT found in HubSpot: event prefix + 4-digit sequential (e.g. GETS0001)
+const BADGE_PREFIX={'cn-mc-ice':'ICE','cn-cls':'CLS','cn-mc-incentives':'INC','cn-als':'ALS','cn-mc-bea':'BEA','cn-cels':'CELS','cn-mc-pe':'PE','en-lc-consumer':'LCCS','en-lc-trade':'LCTS','en-ols':'OLS','en-lc-conferences':'LCCONF','en-mls':'MLS','en-sls':'SLS','en-lc-awards':'LCAW','aaa-ls':'LS','aaa-eps':'EPS','pas-dc-legal':'DCLEG','pas-dc-financial':'DCFIN','pas-dc-medical':'DCMED','pas-dc-hnwi':'DCHNWI','cfx-gets':'GETS'};
+function badgePrefix(id){return BADGE_PREFIX[id]||(((S.events.find(e=>e.id===id)||{}).short||'BADGE').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6));}
+function maxBadgeNum(id){const pre=badgePrefix(id),re=new RegExp('^'+pre+'(\\d{4,})$');let mx=0;
+  const chk=v=>{const m=re.exec(v||'');if(m)mx=Math.max(mx,+m[1]);};
+  (S.store.sponsors[id]||[]).forEach(sp=>sp.contacts.forEach(c=>chk(scanOf(c))));
+  (S.store.speakers[id]||[]).forEach(s2=>chk(scanOf(s2)));
+  ((S.store.delegates||{})[id]||[]).forEach(d=>chk(scanOf(d)));
+  return mx;}
+function nextBadgeId(id){return badgePrefix(id)+String(maxBadgeNum(id)+1).padStart(4,'0');}
+const fmtDate=iso=>{try{return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}catch{return iso;}};
+const fmtAdded=iso=>{if(!iso)return '';try{return new Date(iso).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'});}catch{return '';}};
+const scanOf=o=>o.scanId||o.hubspotId||'';
+function sortRows(rows,mode){const r=[...rows];
+  if(mode==='added-new')r.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
+  else if(mode==='added-old')r.sort((a,b)=>(a.addedAt||'').localeCompare(b.addedAt||''));
+  else r.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  return r;}
+function sortSelect(cur,cb){const sel=el('select');sel.innerHTML='<option value="name">Name A–Z</option><option value="added-new">Added (newest)</option><option value="added-old">Added (oldest)</option>';sel.value=cur;sel.style.flex='0 0 auto';sel.onchange=()=>cb(sel.value);return sel;}
+
+// ---------- API ----------
+async function api(path,opts){
+  const r=await fetch(path,opts);
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json();
+}
+// Match a manually-entered person against HubSpot by email -> Record ID + details
+async function lookupOne(email){if(!email||S.demo)return null;try{return (await api('/api/lookup?email='+encodeURIComponent(email))).match;}catch{return null;}}
+async function lookupMany(emails){emails=[...new Set(emails.filter(Boolean))];if(S.demo||!emails.length)return {};try{return (await api('/api/lookup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({emails})})).matches||{};}catch{return {};}}
+const mkey=e=>(e||'').trim().toLowerCase();
+
+async function loadSummary(){
+  try{
+    const d=await api('/api/attendees');
+    if(d.events)S.events=d.events;
+    S.counts=d.counts||{};
+    setStatus(true,'Live from HubSpot');
+  }catch(e){
+    S.demo=true;
+    // demo counts so the layout is explorable without the backend
+    S.counts=Object.fromEntries(S.events.map(e=>{const opts=[0,1,2,4,11,19,24,29,33,40,42,60];return [e.id,opts[Math.floor(Math.random()*opts.length)]];}));
+    setStatus(false,'Preview (backend not connected)');
+  }
+}
+
+async function loadStore(){
+  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; }
+  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{}}; }
+}
+let saveTimer;
+function queueSave(){
+  clearsave();
+  const chip=$('#saveChip'); chip.textContent='Saving…'; chip.className='savechip';
+  saveTimer=setTimeout(async()=>{
+    try{
+      if(S.demo)throw new Error('demo');
+      await api('/api/store',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({sponsors:S.store.sponsors,speakers:S.store.speakers,delegates:S.store.delegates})});
+      chip.textContent='Saved ✓'; chip.className='savechip ok';
+    }catch{ chip.textContent=S.demo?'Preview — not saved':'Save failed'; chip.className='savechip'; }
+    setTimeout(()=>{chip.textContent='';},2500);
+  },500);
+}
+function clearsave(){if(saveTimer)clearTimeout(saveTimer);}
+
+async function loadAttendees(id){
+  if(S.attendees[id])return S.attendees[id];
+  S.loadingAttendees=true; renderBody();
+  try{
+    const d=await api('/api/attendees?event='+encodeURIComponent(id));
+    S.attendees[id]=d.attendees||[];
+    S.counts[id]=d.total;
+  }catch(e){
+    S.attendees[id]=S.demo?demoAttendees(id):[];
+  }
+  S.loadingAttendees=false;
+  return S.attendees[id];
+}
+function demoAttendees(id){
+  const n=S.counts[id]||0,first=['Sophia','Heena','Marika','Victoria','Roisin','James','Priya','Tom','Aisha','Leo'],
+    last=['Joseph','Balani','Haynes','Kernahan','Price','Owen','Shah','Clarke','Khan','Turner'],
+    role=['Executive Assistant','Legal PA','Operations Manager','Team Coordinator','Office Manager'],
+    co=['Signature Litigation','Streathers','Gunnercooke','Beazley','Pieter Smit','—'];
+  const diet=['','None','Vegetarian','Vegan','Gluten-free','No nuts'],acc=['','No','Wheelchair access','Step-free route'];
+  return Array.from({length:Math.min(n,40)},(_,i)=>({id:'1050'+(1000+i),scanId:'ID1050'+(1000+i),type:'Delegate',
+    name:first[i%10]+' '+last[(i*3)%10],firstname:first[i%10],lastname:last[(i*3)%10],
+    jobtitle:role[i%5],company:co[i%6],email:(first[i%10]+'.'+last[(i*3)%10]).toLowerCase()+'@example.com',
+    dietary:diet[i%6],accessibility:acc[i%4],addedAt:new Date(Date.now()-i*86400000).toISOString()}));
+}
+
+// ---------- status ----------
+function setStatus(ok,txt){
+  $('#dot').style.background=ok?'var(--good)':'var(--warn)';
+  $('#dot').style.boxShadow='0 0 8px '+(ok?'var(--good)':'var(--warn)');
+  $('#statusText').textContent=txt;
+}
+
+// ---------- sidebar ----------
+function renderBrandChips(){
+  const box=$('#brandChips'); box.innerHTML='';
+  BRAND_ORDER.forEach(b=>{
+    const on=S.brandFilter.has(b);
+    const c=el('span','chip'+(on?' on':''),b);
+    if(on)c.style.background=BRAND_COLORS[b];
+    c.onclick=()=>{on?S.brandFilter.delete(b):S.brandFilter.add(b);renderEvents();renderBrandChips();};
+    box.appendChild(c);
+  });
+}
+function visibleEvents(){
+  const q=S.search.toLowerCase();
+  return S.events.filter(e=>{
+    if(S.brandFilter.size&&!S.brandFilter.has(e.brand))return false;
+    if(q&&!(e.name+' '+e.short+' '+e.brand).toLowerCase().includes(q))return false;
+    return true;
+  });
+}
+function renderEvents(){
+  const list=$('#eventList'); list.innerHTML='';
+  const evs=visibleEvents();
+  if(!evs.length){list.appendChild(el('div','empty','No events match.'));return;}
+  BRAND_ORDER.forEach(b=>{
+    const group=evs.filter(e=>e.brand===b);
+    if(!group.length)return;
+    list.appendChild(el('div','grouphdr',b));
+    group.sort((a,c)=>a.date.localeCompare(c.date)).forEach(e=>{
+      const row=el('div','evt'+(S.selected===e.id?' sel':''));
+      const bar=el('div','bar');bar.style.background=BRAND_COLORS[b];
+      const cnt=S.counts[e.id]; const ct=el('div','ct',cnt==null?'–':cnt);
+      row.appendChild(bar);
+      row.appendChild(el('div','en',`<div class="nm">${esc(e.short||e.name)}</div><div class="dt">${fmtDate(e.date)}</div>`));
+      row.appendChild(ct);
+      row.onclick=()=>selectEvent(e.id);
+      list.appendChild(row);
+    });
+  });
+}
+
+// ---------- selection + panel head ----------
+async function selectEvent(id){
+  S.selected=id; renderEvents();
+  const e=S.events.find(x=>x.id===id);
+  $('#evtName').textContent=e.name;
+  $('#evtMeta').innerHTML=`<span class="pill" style="border-color:${BRAND_COLORS[e.brand]};color:${BRAND_COLORS[e.brand]}">${e.brand}</span> &nbsp;${fmtDate(e.date)}`;
+  updateTabCounts();
+  renderBody();
+  if(S.tab==='delegates'){ await loadAttendees(id); updateTabCounts(); renderBody(); }
+}
+function updateTabCounts(){
+  const id=S.selected; if(!id)return;
+  const liveN=(S.attendees[id]?S.attendees[id].length:(S.counts[id]||0));
+  const manN=((S.store.delegates||{})[id]||[]).length;
+  $('#tabCountDel').textContent=(S.attendees[id]||S.counts[id]!=null)?(liveN+manN):'–';
+  $('#tabCountSpo').textContent=(S.store.sponsors[id]||[]).length;
+  $('#tabCountSpk').textContent=(S.store.speakers[id]||[]).length;
+  const sc=(S.store.sponsors[id]||[]).reduce((n,sp)=>n+sp.contacts.length,0);
+  $('#tabCountChk').textContent=liveN+manN+sc+(S.store.speakers[id]||[]).length;
+}
+
+// ---------- CSV ----------
+function toCSV(rows,cols){
+  const head=cols.map(c=>c.label).join(',');
+  const body=rows.map(r=>cols.map(c=>{
+    const v=(c.get?c.get(r):r[c.key])??''; const s=String(v).replace(/"/g,'""');
+    return /[",\n]/.test(s)?`"${s}"`:s;
+  }).join(',')).join('\n');
+  return head+'\n'+body;
+}
+function download(name,text){
+  const b=new Blob([text],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
+  a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);
+}
+
+// ---------- tab body ----------
+function renderBody(){
+  const box=$('#tabBody'); box.innerHTML='';
+  if(!S.selected){box.appendChild(el('div','empty','<div class="big">No event selected</div>Choose an event from the list to get started.'));return;}
+  if(S.tab==='delegates')renderDelegates(box);
+  else if(S.tab==='sponsors')renderSponsors(box);
+  else if(S.tab==='speakers')renderSpeakers(box);
+  else renderCheckin(box);
+}
+
+// ----- DELEGATES -----
+let delSearch='',delSort='name';
+function allDelegates(id){
+  const live=(S.attendees[id]||[]).map(a=>({...a,scanId:scanOf(a),manual:false}));
+  const man=((S.store.delegates||{})[id]||[]).map(d=>({...d,manual:true}));
+  return [...live,...man];
+}
+function delegateAddCard(box,id){
+  const add=el('div','card-add');
+  add.innerHTML="<div style=\"font-weight:600;margin-bottom:8px\">Add a delegate manually (walk-ins)</div><div class=\"muted\" style=\"font-size:12px;margin-bottom:8px\">Checked against HubSpot by email — if they exist their Scan ID and details pull through; if not, a badge ID is generated.</div>";
+  const g=el('div','grid2');
+  const f={name:field('Name','text','Full name'),job:field('Job title','text',''),co:field('Company','text',''),
+    em:field('Email','text',''),di:field('Dietary requirements','text',''),ac:field('Accessibility requirements','text','')};
+  g.append(f.name.wrap,f.job.wrap,f.co.wrap,f.em.wrap,f.di.wrap,f.ac.wrap);
+  const btn=el('button','btn primary sm','Add delegate');btn.style.marginTop='8px';
+  btn.onclick=async()=>{const name=f.name.input.value.trim();if(!name)return f.name.input.focus();
+    const email=f.em.input.value.trim();btn.disabled=true;btn.textContent='Checking HubSpot…';
+    const m=await lookupOne(email);
+    const rec=m?(m.scanId||m.id):nextBadgeId(id);
+    (S.store.delegates[id]??=[]).push({id:uid(),scanId:rec,idSource:m?'hubspot':'generated',type:'Delegate',
+      name,firstname:(m&&m.firstname)||name.split(' ')[0]||'',lastname:(m&&m.lastname)||name.split(' ').slice(1).join(' '),
+      jobtitle:f.job.input.value.trim()||(m&&m.jobtitle)||'',company:f.co.input.value.trim()||(m&&m.company)||'',email,
+      dietary:f.di.input.value.trim()||(m&&m.dietary)||'',accessibility:f.ac.input.value.trim()||(m&&m.accessibility)||'',
+      addedAt:new Date().toISOString()});
+    queueSave();updateTabCounts();renderDelegates(box);};
+  add.append(g,btn);return add;
+}
+function renderDelegates(box){
+  box.innerHTML='';
+  const id=S.selected;
+  box.appendChild(el('div','banner','Delegates flow in automatically once their <strong>Joining Instructions are signed</strong> in HubSpot (approvals stay with marketing). You can also add walk-ins manually below.'));
+  box.appendChild(delegateAddCard(box,id));
+  if(S.loadingAttendees&&!S.attendees[id]){box.appendChild(el('div','empty','<span class="spinner"></span> Loading attendees from HubSpot…'));return;}
+  const all=allDelegates(id);
+  const tb=el('div','toolbar');
+  const si=el('input','grow');si.placeholder='Search name, company, job title…';si.value=delSearch;
+  const rc=el('div','muted','');
+  const ex=el('button','btn sm','Export CSV');
+  ex.onclick=()=>download(id+'-delegates.csv',toCSV(sortRows(all,delSort),[
+    {label:'Type',key:'type'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
+    {label:'First name',key:'firstname'},{label:'Last name',key:'lastname'},
+    {label:'Email',key:'email'},{label:'Company',key:'company'},{label:'Job title',key:'jobtitle'},
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'}]));
+  const rf=el('button','btn sm ghost','↻');rf.title='Reload from HubSpot';
+  rf.onclick=async()=>{delete S.attendees[id];await loadAttendees(id);updateTabCounts();renderDelegates(box);};
+  tb.append(si,sortSelect(delSort,v=>{delSort=v;renderDelegates(box);}),rc,ex,rf);
+  box.appendChild(tb);
+  if(!all.length){box.appendChild(el('div','empty','<div class="big">No confirmed delegates yet</div>They will appear here as joining instructions are signed, or add walk-ins above.'));return;}
+  const rows=sortRows(all,delSort);
+  const wrap=el('div','tablewrap');const t=el('table');
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th></th></tr></thead>';
+  const tbody=el('tbody');
+  rows.forEach(a=>{
+    const tr=el('tr');tr.dataset.s=(a.name+' '+a.company+' '+a.jobtitle+' '+a.email).toLowerCase();
+    tr.innerHTML=`<td><strong>${esc(a.name)}</strong>${a.manual?' <span class="pill">walk-in</span>':''}</td>
+      <td class="rid">${esc(scanOf(a))||'<span class=muted>—</span>'}</td>
+      <td>${fmtAdded(a.addedAt)||'<span class=muted>—</span>'}</td>
+      <td>${esc(a.jobtitle)||'<span class=muted>—</span>'}</td>
+      <td>${esc(a.company)||'<span class=muted>—</span>'}</td>
+      <td>${a.email?`<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>`:'<span class=muted>—</span>'}</td>
+      <td>${esc(a.dietary)||'<span class=muted>—</span>'}</td>
+      <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td></td>`;
+    if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{S.store.delegates[id]=(S.store.delegates[id]||[]).filter(y=>y.id!==a.id);queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
+    tbody.appendChild(tr);
+  });
+  t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
+  const applyFilter=()=>{const qq=si.value.toLowerCase();let sh=0;[...tbody.children].forEach(tr=>{const v=!qq||tr.dataset.s.includes(qq);tr.style.display=v?'':'none';if(v)sh++;});rc.textContent=sh+' of '+all.length;delSearch=si.value;};
+  si.oninput=applyFilter;applyFilter();
+}
+
+// ----- SPONSORS -----
+function renderSponsors(box){
+  box.innerHTML='';
+  const id=S.selected;
+  S.store.sponsors[id]??=[];
+  const list=S.store.sponsors[id];
+  const add=el('div','card-add');
+  add.innerHTML='<div style="font-weight:600;margin-bottom:8px">Add a sponsor</div>';
+  const g=el('div','grid2');
+  const cName=field('Sponsor / company','text','e.g. Cvent');
+  const cTier=field('Tier / package','text','e.g. Headline, Gold, Exhibitor');
+  g.append(cName.wrap,cTier.wrap);
+  const btn=el('button','btn primary sm','Add sponsor');btn.style.marginTop='8px';
+  btn.onclick=()=>{
+    const name=cName.input.value.trim();if(!name)return cName.input.focus();
+    list.push({id:uid(),company:name,tier:cTier.input.value.trim(),contacts:[],addedAt:new Date().toISOString()});
+    queueSave();updateTabCounts();renderSponsors(box);
+  };
+  add.append(g,btn);box.appendChild(add);
+  const tb=el('div','toolbar');
+  tb.appendChild(el('div','muted',list.length+' sponsor'+(list.length===1?'':'s')+' · '+list.reduce((n,s)=>n+s.contacts.length,0)+' attendees'));
+  const ex=el('button','btn sm','Export sponsor attendees');
+  ex.onclick=()=>{
+    const rows=[];list.forEach(s=>s.contacts.forEach(c=>rows.push({...c,sponsor:s.company,tier:s.tier})));
+    download(id+'-sponsor-attendees.csv',toCSV(rows,[
+      {label:'Type',get:()=>'Sponsor'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
+      {label:'Sponsor',key:'sponsor'},{label:'Tier',key:'tier'},
+      {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},
+      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'}]));
+  };
+  tb.appendChild(ex);box.appendChild(tb);
+  if(!list.length){box.appendChild(el('div','empty','<div class="big">No sponsors added yet</div>Add your event sponsors above, then log the people each is sending.'));return;}
+  [...list].sort((a,b)=>(a.company||'').localeCompare(b.company||'')).forEach(sp=>{
+    const card=el('div','sponsor');
+    const sh=el('div','sh');
+    sh.innerHTML=`<div><span class="sn">${esc(sp.company)}</span> ${sp.tier?`<span class="pill">${esc(sp.tier)}</span>`:''}</div>`;
+    const del=el('button','btn sm danger','Remove');
+    del.onclick=()=>{if(confirm('Remove sponsor "'+sp.company+'"?')){S.store.sponsors[id]=list.filter(x=>x.id!==sp.id);queueSave();updateTabCounts();renderSponsors(box);}};
+    sh.appendChild(del);card.appendChild(sh);
+    if(!sp.contacts.length)card.appendChild(el('div','muted','<div style="padding:6px 0">No attendees logged yet.</div>'));
+    sp.contacts.forEach(c=>{
+      const a=el('div','att');
+      const _x=[c.dietary?('Dietary: '+esc(c.dietary)):'',c.accessibility?('Access: '+esc(c.accessibility)):''].filter(Boolean).join(' · ');
+      const _id=scanOf(c)?(c.idSource==='generated'
+          ?`<span class="tb spk" title="Generated badge ID — not in HubSpot">${esc(scanOf(c))}</span>`
+          :`<span class="tb del" title="HubSpot Scan ID">${esc(scanOf(c))}</span>`)
+        :`<span class="pill">no ID</span>`;
+      a.innerHTML=`<div class="ai"><strong>${esc(c.name)}</strong> ${_id} ${c.jobtitle?`· <span class="muted">${esc(c.jobtitle)}</span>`:''} ${c.email?`· <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}${_x?` <span class="muted">· ${_x}</span>`:''}</div>`;
+      const x=el('button','btn sm ghost','✕');
+      x.onclick=()=>{sp.contacts=sp.contacts.filter(y=>y.id!==c.id);queueSave();updateTabCounts();renderSponsors(box);};
+      a.appendChild(x);card.appendChild(a);
+    });
+    const row=el('div','addrow');
+    const n=el('input');n.placeholder='Name';n.style.flex='1 1 110px';
+    const j=el('input');j.placeholder='Job title';j.style.flex='1 1 110px';
+    const em=el('input');em.placeholder='Email';em.style.flex='1 1 140px';
+    const di=el('input');di.placeholder='Dietary';di.style.flex='1 1 100px';
+    const ac=el('input');ac.placeholder='Accessibility';ac.style.flex='1 1 100px';
+    const ad=el('button','btn sm','Add attendee');
+    ad.onclick=async()=>{const name=n.value.trim();if(!name)return n.focus();
+      const email=em.value.trim();ad.disabled=true;ad.textContent='Checking HubSpot…';
+      const m=await lookupOne(email);
+      const rec=m?(m.scanId||m.id):nextBadgeId(S.selected);
+      sp.contacts.push({id:uid(),scanId:rec,idSource:m?'hubspot':'generated',name,jobtitle:j.value.trim()||(m&&m.jobtitle)||'',
+        email,dietary:di.value.trim()||(m&&m.dietary)||'',accessibility:ac.value.trim()||(m&&m.accessibility)||'',addedAt:new Date().toISOString()});
+      queueSave();updateTabCounts();renderSponsors(box);};
+    row.append(n,j,em,di,ac,ad);card.appendChild(row);
+    box.appendChild(card);
+  });
+}
+
+// ----- SPEAKERS -----
+let spkMode='single',spkSort='name';
+function renderSpeakers(box){
+  box.innerHTML='';
+  const id=S.selected;
+  S.store.speakers[id]??=[];
+  const list=S.store.speakers[id];
+  const toggle=el('div','toolbar');
+  const t1=el('button','btn sm'+(spkMode==='single'?' primary':''),'Add individually');
+  const t2=el('button','btn sm'+(spkMode==='bulk'?' primary':''),'Bulk upload');
+  t1.onclick=()=>{spkMode='single';renderSpeakers(box);};
+  t2.onclick=()=>{spkMode='bulk';renderSpeakers(box);};
+  toggle.append(t1,t2,sortSelect(spkSort,v=>{spkSort=v;renderSpeakers(box);}));
+  const ex=el('button','btn sm','Export CSV');ex.style.marginLeft='auto';
+  ex.onclick=()=>download(id+'-speakers.csv',toCSV(sortRows(list,spkSort),[
+    {label:'Type',get:()=>'Speaker'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
+    {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},
+    {label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Session',key:'session'},
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'}]));
+  toggle.appendChild(ex);
+  box.appendChild(toggle);
+  if(spkMode==='single'){
+    const add=el('div','card-add');
+    add.innerHTML='<div style="font-weight:600;margin-bottom:8px">Add a speaker</div>';
+    const g=el('div','grid2');
+    const f={name:field('Name','text','Full name'),job:field('Job title','text',''),
+      co:field('Company','text',''),em:field('Email','text',''),
+      di:field('Dietary requirements','text',''),ac:field('Accessibility requirements','text',''),
+      ses:field('Session / talk','text','')};
+    g.append(f.name.wrap,f.job.wrap,f.co.wrap,f.em.wrap,f.di.wrap,f.ac.wrap);
+    add.append(g,f.ses.wrap);
+    const btn=el('button','btn primary sm','Add speaker');btn.style.marginTop='8px';
+    btn.onclick=async()=>{const name=f.name.input.value.trim();if(!name)return f.name.input.focus();
+      const email=f.em.input.value.trim();btn.disabled=true;btn.textContent='Checking HubSpot…';
+      const m=await lookupOne(email);
+      const rec=m?(m.scanId||m.id):nextBadgeId(S.selected);
+      list.push({id:uid(),scanId:rec,idSource:m?'hubspot':'generated',name,jobtitle:f.job.input.value.trim()||(m&&m.jobtitle)||'',
+        company:f.co.input.value.trim()||(m&&m.company)||'',email,
+        dietary:f.di.input.value.trim()||(m&&m.dietary)||'',accessibility:f.ac.input.value.trim()||(m&&m.accessibility)||'',
+        session:f.ses.input.value.trim(),addedAt:new Date().toISOString()});
+      queueSave();updateTabCounts();renderSpeakers(box);};
+    add.appendChild(btn);box.appendChild(add);
+  }else{
+    const add=el('div','card-add');
+    add.innerHTML='<div style="font-weight:600;margin-bottom:4px">Bulk upload speakers</div><div class="muted" style="font-size:12px;margin-bottom:8px">Paste rows or drop a .csv. Columns: <code>Name, Job title, Company, Email, Session, Dietary, Accessibility</code> (header row optional; trailing columns can be left off).</div>';
+    const ta=el('textarea');ta.placeholder='Jane Smith, Head of Events, Acme Ltd, jane@acme.com, Opening keynote, Vegetarian, None';
+    const fileRow=el('div','addrow');
+    const file=el('input');file.type='file';file.accept='.csv,text/csv';
+    file.onchange=async()=>{if(file.files[0]){ta.value=await file.files[0].text();}};
+    const btn=el('button','btn primary sm','Import');
+    btn.onclick=async()=>{
+      const parsed=parseSpeakers(ta.value);
+      if(!parsed.length)return alert('No rows found — check the format.');
+      btn.disabled=true;btn.textContent='Matching against HubSpot…';
+      const matches=await lookupMany(parsed.map(r=>r.email));
+      const pre=badgePrefix(S.selected);let counter=maxBadgeNum(S.selected),matched=0,gen=0;const now=new Date().toISOString();
+      parsed.forEach(r=>{const m=matches[mkey(r.email)];let rec,src;
+        if(m){rec=m.scanId||m.id;src='hubspot';matched++;}else{counter++;gen++;rec=pre+String(counter).padStart(4,'0');src='generated';}
+        list.push({id:uid(),scanId:rec,idSource:src,name:r.name,
+          jobtitle:r.jobtitle||(m&&m.jobtitle)||'',company:r.company||(m&&m.company)||'',email:r.email,
+          session:r.session,dietary:r.dietary||(m&&m.dietary)||'',accessibility:r.accessibility||(m&&m.accessibility)||'',addedAt:now});});
+      queueSave();updateTabCounts();renderSpeakers(box);
+      alert('Imported '+parsed.length+' speaker'+(parsed.length===1?'':'s')+' — '+matched+' matched HubSpot, '+gen+' given a generated badge ID.');
+    };
+    fileRow.append(file,btn);
+    add.append(ta,fileRow);box.appendChild(add);
+  }
+  if(!list.length){box.appendChild(el('div','empty','<div class="big">No speakers yet</div>Add them individually or bulk-upload a list.'));return;}
+  const wrap=el('div','tablewrap');const t=el('table');
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th></th></tr></thead>';
+  const tbody=el('tbody');
+  sortRows(list,spkSort).forEach(s=>{
+    const tr=el('tr');
+    tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td>${esc(s.jobtitle)||'—'}</td><td>${esc(s.company)||'—'}</td>
+      <td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td>${esc(s.session)||'—'}</td>
+      <td>${esc(s.dietary)||'—'}</td><td>${esc(s.accessibility)||'—'}</td>`;
+    const td=el('td');const x=el('button','btn sm ghost','✕');
+    x.onclick=()=>{S.store.speakers[id]=list.filter(y=>y.id!==s.id);queueSave();updateTabCounts();renderSpeakers(box);};
+    td.appendChild(x);tr.appendChild(td);tbody.appendChild(tr);
+  });
+  t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
+}
+function parseSpeakers(text){
+  const out=[];
+  text.split(/\r?\n/).forEach((line,i)=>{
+    if(!line.trim())return;
+    const cells=line.split(/,|\t/).map(c=>c.trim());
+    if(i===0&&/^name$/i.test(cells[0]))return; // skip header
+    const [name,jobtitle='',company='',email='',session='',dietary='',accessibility='']=cells;
+    if(name)out.push({name,jobtitle,company,email,session,dietary,accessibility});
+  });
+  return out;
+}
+function field(label,type,ph){
+  const wrap=el('div','field');const l=el('label',null,label);const input=el('input');
+  input.type=type||'text';if(ph)input.placeholder=ph;wrap.append(l,input);return{wrap,input};
+}
+
+// ----- ALL ATTENDEE DATA (merged delegates + sponsor attendees + speakers) -----
+let chkSearch='',chkSort='name';
+function buildCheckinRows(id){
+  const rows=[];
+  allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',note:a.manual?'walk-in':''}));
+  (S.store.sponsors[id]||[]).forEach(sp=>sp.contacts.forEach(c=>rows.push({type:'Sponsor',cls:'spo',scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',note:sp.tier||''})));
+  (S.store.speakers[id]||[]).forEach(s2=>rows.push({type:'Speaker',cls:'spk',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',note:s2.session||''}));
+  return rows;
+}
+function renderCheckin(box){
+  box.innerHTML='';
+  const id=S.selected;
+  const ev=S.events.find(e=>e.id===id);
+  if(S.loadingAttendees&&!S.attendees[id]){box.appendChild(el('div','empty','<span class="spinner"></span> Building list…'));return;}
+  const all=sortRows(buildCheckinRows(id),chkSort);
+  box.appendChild(el('div','banner','Every attendee for this event in one place — delegates, sponsor reps and speakers — with Scan IDs for badging. Use <strong>Print</strong> for a paper check-in sheet or <strong>Export CSV</strong> for badging/registration.'));
+  const counts=all.reduce((m,r)=>{m[r.type]=(m[r.type]||0)+1;return m;},{});
+  const tb=el('div','toolbar');
+  const si=el('input','grow');si.placeholder='Search everyone…';si.value=chkSearch;
+  const rc=el('div','muted','');
+  tb.append(si,sortSelect(chkSort,v=>{chkSort=v;renderCheckin(box);}),rc);
+  const pr=el('button','btn sm primary','Print sheet');pr.onclick=()=>window.print();
+  const ex=el('button','btn sm','Export CSV');
+  ex.onclick=()=>download(id+'-all-attendee-data.csv',toCSV(all,[
+    {label:'Type',key:'type'},{label:'Scan ID',key:'scanId'},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},
+    {label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},
+    {label:'Note',key:'note'}]));
+  tb.append(pr,ex);
+  box.appendChild(tb);
+  const ph=el('div','printhdr',`<div class="pt2">${esc(ev?ev.name:'')} — All Attendee Data</div><div class="mt2">${ev?fmtDate(ev.date):''} · ${all.length} people · generated ${new Date().toLocaleString('en-GB')}</div>`);
+  box.appendChild(ph);
+  if(!all.length){box.appendChild(el('div','empty','<div class="big">Nobody to list yet</div>Delegates, sponsor attendees and speakers will appear here as they are added.'));return;}
+  const wrap=el('div','tablewrap');const t=el('table');
+  t.innerHTML='<thead><tr><th style="width:34px">In</th><th>Name</th><th>Scan ID</th><th>Added</th><th>Type</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Note</th></tr></thead>';
+  const tbody=el('tbody');
+  all.forEach(r=>{
+    const tr=el('tr');tr.dataset.s=(r.name+' '+r.company+' '+r.jobtitle+' '+r.type).toLowerCase();
+    tr.innerHTML=`<td><span class="chk"></span></td><td><strong>${esc(r.name)}</strong></td>
+      <td class="rid">${esc(r.scanId)||'<span class=muted>—</span>'}</td>
+      <td>${fmtAdded(r.addedAt)||'<span class=muted>—</span>'}</td>
+      <td><span class="tb ${r.cls}">${r.type}</span></td>
+      <td>${esc(r.jobtitle)||'<span class=muted>—</span>'}</td>
+      <td>${esc(r.company)||'<span class=muted>—</span>'}</td>
+      <td>${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:'<span class=muted>—</span>'}</td>
+      <td>${esc(r.dietary)||'<span class=muted>—</span>'}</td>
+      <td>${esc(r.accessibility)||'<span class=muted>—</span>'}</td>
+      <td>${esc(r.note)||'<span class=muted>—</span>'}</td>`;
+    tbody.appendChild(tr);
+  });
+  t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
+  const applyFilter=()=>{const qq=si.value.toLowerCase();let sh=0;[...tbody.children].forEach(tr=>{const v=!qq||tr.dataset.s.includes(qq);tr.style.display=v?'':'none';if(v)sh++;});rc.textContent=sh+' of '+all.length+' · '+(counts.Delegate||0)+' delegates, '+(counts.Sponsor||0)+' sponsor, '+(counts.Speaker||0)+' speakers';chkSearch=si.value;};
+  si.oninput=applyFilter;applyFilter();
+}
+// ---------- tabs ----------
+$('#tabs').querySelectorAll('.tab').forEach(t=>{
+  t.onclick=async()=>{
+    $('#tabs').querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');S.tab=t.dataset.tab;
+    renderBody();
+    if((S.tab==='delegates'||S.tab==='checkin')&&S.selected){await loadAttendees(S.selected);updateTabCounts();renderBody();}
+  };
+});
+$('#evtSearch').oninput=e=>{S.search=e.target.value;renderEvents();};
+$('#refreshBtn').onclick=async()=>{S.attendees={};await loadSummary();renderEvents();if(S.selected)selectEvent(S.selected);};
+
+// ---------- theme ----------
+function applyTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('portalTheme',t);}catch{}const b=document.getElementById('themeBtn');if(b)b.textContent=t==='light'?'Dark':'Light';}
+(function(){let t='dark';try{t=localStorage.getItem('portalTheme')||'dark';}catch{}applyTheme(t);
+  document.getElementById('themeBtn').onclick=()=>applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light');})();
+
+// ---------- boot ----------
+(async function(){
+  renderBrandChips();
+  await Promise.all([loadSummary(),loadStore()]);
+  renderEvents();
+  // auto-select the soonest upcoming event
+  const today=new Date().toISOString().slice(0,10);
+  const upcoming=[...S.events].filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0]||S.events[0];
+  if(upcoming)selectEvent(upcoming.id);
+})();
+</script>
+</body>
+</html>
