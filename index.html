@@ -288,8 +288,8 @@ async function loadSummary(){
 }
 
 async function loadStore(){
-  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; S.store.staff??={}; }
-  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{}}; }
+  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; S.store.staff??={}; S.store.onsite??={}; }
+  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{},onsite:{}}; }
 }
 let saveTimer,saving=false;
 function queueSave(){
@@ -767,6 +767,28 @@ function renderStaff(box){
   S.store.staff??={};S.store.staff[id]??=[];
   const list=S.store.staff[id];
   box.appendChild(el('div','banner','Tick the Mash Media staff attending this event. They are added to All Attendee Data tagged <strong>Staff</strong>, with their scan IDs. Use the box below to add external staff or crew who are not in HubSpot.'));
+  S.store.onsite??={}; const od=(S.store.onsite[id]??={});
+  const op=el('div','card-add');
+  op.innerHTML='<div style="font-weight:600;margin-bottom:8px">On-site details — emailed to staff with a calendar invite</div>';
+  const og=el('div','grid2');
+  const of1=field('Dress code','text','e.g. Smart / branded polo');
+  const of2=field('Arrival on site','text','e.g. 07:30');
+  const of3=field('Finish','text','e.g. 18:00');
+  const of4=field('Nearest station','text','auto-fill or type');
+  of1.input.value=od.dressCode||'';of2.input.value=od.arrival||'';of3.input.value=od.finish||'';of4.input.value=od.station||'';
+  of1.input.onchange=()=>{od.dressCode=of1.input.value.trim();queueSave();};
+  of2.input.onchange=()=>{od.arrival=of2.input.value.trim();queueSave();};
+  of3.input.onchange=()=>{od.finish=of3.input.value.trim();queueSave();};
+  of4.input.onchange=()=>{od.station=of4.input.value.trim();queueSave();};
+  og.append(of1.wrap,of2.wrap,of3.wrap,of4.wrap);op.append(og);
+  const vrow=el('div','muted');vrow.style.margin='8px 0 0';vrow.textContent='Venue pulls from the calendar automatically when you send.';
+  const findBtn=el('button','btn sm','📍 Find nearest station');
+  findBtn.onclick=async()=>{findBtn.disabled=true;findBtn.textContent='Finding…';try{const r=await api('/api/nearest-station?event='+encodeURIComponent(id));if(r.venue)vrow.textContent='Venue: '+r.venue;if(r.station){of4.input.value=r.station;od.station=r.station;queueSave();findBtn.textContent='📍 '+r.station+(r.dist?(' ('+r.dist+' km)'):'');}else{findBtn.textContent='No station found — type it';}}catch(e){findBtn.textContent='Lookup failed — type it';}finally{findBtn.disabled=false;}};
+  const sendBtn=el('button','btn primary sm','✉ Send briefing to attending staff');sendBtn.style.marginLeft='8px';
+  const sendMsg=el('span','muted');sendMsg.style.marginLeft='8px';
+  sendBtn.onclick=async()=>{const att=(S.store.staff[id]||[]).filter(x=>!x.deleted&&x.email);if(!att.length){sendMsg.textContent='No attending staff with an email address.';return;}if(!confirm('Send the briefing email + calendar invite to '+att.length+' staff member(s)?'))return;sendBtn.disabled=true;sendMsg.textContent='Sending…';const ev=(S.events||[]).find(e=>e.id===id)||{};try{const r=await api('/api/send-briefing',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eventId:id,name:ev.name||ev.short||id,date:ev.date,dateLabel:ev.date,onsite:od,recipients:att.map(x=>({name:x.name,email:x.email}))})});const okN=(r.sent||[]).length,failN=(r.failed||[]).length;sendMsg.textContent='Sent to '+okN+' staff'+(failN?(' · '+failN+' failed'):'')+(r.venue?(' · venue: '+r.venue):'');}catch(e){sendMsg.textContent='Send failed: '+(e.message||e);}finally{sendBtn.disabled=false;}};
+  const brow=el('div');brow.style.marginTop='10px';brow.append(findBtn,sendBtn,sendMsg);op.append(vrow,brow);
+  box.appendChild(op);
   if(!S.staffRoster){if(staffError){box.appendChild(el('div','empty','<div class="big">Couldn\'t load the staff list</div>HubSpot was momentarily unavailable.'));const rb=el('button','btn sm','Retry');rb.onclick=()=>loadStaff(true).then(()=>{if(S.tab==='staff')renderStaff(box);});box.appendChild(rb);return;}box.appendChild(el('div','empty','<span class="spinner"></span> Loading staff roster…'));if(!staffLoading)loadStaff().then(()=>{if(S.tab==='staff')renderStaff(box);});return;}
   const attending=()=>list.filter(x=>!x.deleted);
   const attendingRoster=()=>new Set(attending().filter(x=>x.rosterId).map(x=>x.rosterId));
