@@ -253,7 +253,7 @@ function _byId(a,b,deep){const m=new Map();(a||[]).forEach(x=>x&&m.set(x.id,x));
 function _lists(sv,lo,deep){sv=sv||{};lo=lo||{};const o={...sv};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]=_byId(sv[k],lo[k],deep);return o;}
 function _maps(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]={...(sv[k]||{}),...(lo[k]||{})};return o;}
 function _seenM(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)])){const a=sv[k]||{},b=lo[k]||{};o[k]={baseline:{...(a.baseline||{}),...(b.baseline||{})},added:{...(a.added||{}),...(b.added||{})}};}return o;}
-function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),staff:_lists(sv.staff,lo.staff,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes)};}
+function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),staff:_lists(sv.staff,lo.staff,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes),onsite:Object.assign({},sv.onsite||{},lo.onsite||{})};}
 function isEditing(){const ae=document.activeElement;return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&$('#tabBody')&&$('#tabBody').contains(ae));}
 function sortRows(rows,mode){const r=[...rows];
   if(mode==='added-new')r.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
@@ -776,10 +776,10 @@ function renderStaff(box){
   const of3=field('Finish','text','e.g. 18:00');
   const of4=field('Nearest station','text','auto-fill or type');
   of1.input.value=od.dressCode||'';of2.input.value=od.arrival||'';of3.input.value=od.finish||'';of4.input.value=od.station||'';
-  of1.input.onchange=()=>{od.dressCode=of1.input.value.trim();queueSave();};
-  of2.input.onchange=()=>{od.arrival=of2.input.value.trim();queueSave();};
-  of3.input.onchange=()=>{od.finish=of3.input.value.trim();queueSave();};
-  of4.input.onchange=()=>{od.station=of4.input.value.trim();queueSave();};
+  of1.input.oninput=()=>{od.dressCode=of1.input.value.trim();queueSave();};
+  of2.input.oninput=()=>{od.arrival=of2.input.value.trim();queueSave();};
+  of3.input.oninput=()=>{od.finish=of3.input.value.trim();queueSave();};
+  of4.input.oninput=()=>{od.station=of4.input.value.trim();queueSave();};
   og.append(of1.wrap,of2.wrap,of3.wrap,of4.wrap);op.append(og);
   const vrow=el('div','muted');vrow.style.margin='8px 0 0';vrow.textContent='Venue pulls from the calendar automatically when you send.';
   const findBtn=el('button','btn sm','📍 Find nearest station');
