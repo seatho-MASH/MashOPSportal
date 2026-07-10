@@ -37,7 +37,7 @@ export default async (req) => {
   const g = await geocode(venue);
   if (!g) return json({ venue, station: null });
 
-  const q = '[out:json][timeout:20];(node[railway=station](around:2500,' + g.lat + ',' + g.lon + ');node[railway=halt](around:2500,' + g.lat + ',' + g.lon + '););out;';
+  const q = '[out:json][timeout:20];(node[railway=station](around:15000,' + g.lat + ',' + g.lon + ');node[railway=halt](around:15000,' + g.lat + ',' + g.lon + '););out;';
   const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: q }).then(x => x.json()).catch(() => null);
   if (!r || !r.elements || !r.elements.length) return json({ venue, station: null });
 
