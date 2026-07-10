@@ -1,33 +1,48 @@
 import { graphToken, eventFromSharePoint } from './_graph.mjs';
+import { STATIONS } from './stations.mjs';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   });
 }
-const UA = { 'user-agent': 'MashOpsPortal/1.0 (ops@mashmedia.net)' };
 
+// Geocode a UK venue string to coords using postcodes.io only (reliable server-side).
+// 1) full postcode; 2) fall back to the outward code (e.g. "TN22") if the full one misses.
 async function geocode(loc) {
   const pc = (loc.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i) || [])[0];
-  // UK postcode → coords via postcodes.io (reliable server-side, unlike Nominatim).
   if (pc) {
     try {
-      const j = await fetch('https://api.postcodes.io/postcodes/' + encodeURIComponent(pc.replace(/\s+/g, ''))).then(r => r.json());
-      if (j && j.result && j.result.latitude) return { lat: j.result.latitude, lon: j.result.longitude };
+      const j = await fetch('https://api.postcodes.io/postcodes/' + encodeURIComponent(pc.replace(/\s+/g, '')))
+        .then(r => r.json());
+      if (j && j.result && j.result.latitude != null) return { lat: j.result.latitude, lon: j.result.longitude, via: 'postcode' };
     } catch (e) {}
   }
-  const qs = [loc, loc + ', UK']; if (pc) qs.push(pc + ', UK'); qs.push(loc.split(',')[0] + ', London, UK');
-  for (const q of qs) {
-    const g = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), { headers: UA })
-      .then(r => r.json()).catch(() => null);
-    if (g && g.length) return { lat: +g[0].lat, lon: +g[0].lon };
+  const out = (loc.match(/\b[A-Z]{1,2}\d[A-Z\d]?\b/i) || [])[0];
+  if (out) {
+    try {
+      const j = await fetch('https://api.postcodes.io/outcodes/' + encodeURIComponent(out.replace(/\s+/g, '')))
+        .then(r => r.json());
+      if (j && j.result && j.result.latitude != null) return { lat: j.result.latitude, lon: j.result.longitude, via: 'outcode' };
+    } catch (e) {}
   }
   return null;
 }
+
 function dist(la1, lo1, la2, lo2) {
   const R = 6371, dl = (la2 - la1) * Math.PI / 180, dn = (lo2 - lo1) * Math.PI / 180;
   const x = Math.sin(dl / 2) ** 2 + Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * Math.sin(dn / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// Nearest station from the bundled UK stations list (no external map API).
+function nearest(lat, lon) {
+  let best = null, bd = 1e9;
+  for (const s of STATIONS) {
+    const d = dist(lat, lon, s[1], s[2]);
+    if (d < bd) { bd = d; best = s[0]; }
+  }
+  return best ? { station: best, dist: +bd.toFixed(2) } : null;
 }
 
 export default async (req) => {
@@ -44,17 +59,9 @@ export default async (req) => {
   const g = await geocode(venue);
   if (!g) return json({ venue, station: null });
 
-  const q = '[out:json][timeout:20];(node[railway=station](around:15000,' + g.lat + ',' + g.lon + ');node[railway=halt](around:15000,' + g.lat + ',' + g.lon + '););out;';
-  const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: q }).then(x => x.json()).catch(() => null);
-  if (!r || !r.elements || !r.elements.length) return json({ venue, station: null });
-
-  let best = null, bd = 1e9;
-  for (const el of r.elements) {
-    if (!el.tags || !el.tags.name) continue;
-    const d = dist(g.lat, g.lon, el.lat, el.lon);
-    if (d < bd) { bd = d; best = el.tags.name; }
-  }
-  return json({ venue, station: best, dist: best ? +bd.toFixed(2) : null });
+  const n = nearest(g.lat, g.lon);
+  if (!n) return json({ venue, station: null });
+  return json({ venue, station: n.station, dist: n.dist });
 };
 
 export const config = { path: '/api/nearest-station' };
