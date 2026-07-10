@@ -846,7 +846,7 @@ function renderStaff(box){
     const tr=el('tr');tr.dataset.s=(pn.name+' '+pn.email+' '+pn.jobtitle).toLowerCase();
     const cb=el('input');cb.type='checkbox';cb.dataset.rid=pn.id;cb.checked=set0.has(pn.id);
     cb.onchange=()=>{
-      if(cb.checked){list.push({id:uid(),rosterId:pn.id,external:false,scanId:pn.scanId,name:pn.name,firstname:pn.firstname,lastname:pn.lastname,email:pn.email,jobtitle:pn.jobtitle,company:'',dietary:pn.dietary||'',accessibility:pn.accessibility||'',note:'',addedAt:new Date().toISOString()});}
+      if(cb.checked){list.push({id:uid(),rosterId:pn.id,external:false,scanId:pn.scanId,name:pn.name,firstname:pn.firstname,lastname:pn.lastname,email:pn.email,jobtitle:pn.jobtitle,company:pn.company||'Mash Media',dietary:pn.dietary||'',accessibility:pn.accessibility||'',note:'',addedAt:new Date().toISOString()});}
       else{list.forEach(x=>{if(x.rosterId===pn.id&&!x.deleted)x.deleted=true;});}
       queueSave();updateTabCounts();renderAtt();refreshCount();
     };

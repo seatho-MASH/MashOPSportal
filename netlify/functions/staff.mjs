@@ -87,6 +87,7 @@ export default async () => {
           lastname: p.lastname || '',
           name: [p.firstname, p.lastname].filter(Boolean).join(' ') || email,
           email: p.email || '',
+          company: 'Mash Media',
           scanId: p.pas_scan_id || ('STAFF' + r.id),
           jobtitle: p.jobtitle || '',
           dietary: p.dietary_requirements || '',
