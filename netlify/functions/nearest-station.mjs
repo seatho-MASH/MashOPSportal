@@ -9,6 +9,13 @@ const UA = { 'user-agent': 'MashOpsPortal/1.0 (ops@mashmedia.net)' };
 
 async function geocode(loc) {
   const pc = (loc.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i) || [])[0];
+  // UK postcode → coords via postcodes.io (reliable server-side, unlike Nominatim).
+  if (pc) {
+    try {
+      const j = await fetch('https://api.postcodes.io/postcodes/' + encodeURIComponent(pc.replace(/\s+/g, ''))).then(r => r.json());
+      if (j && j.result && j.result.latitude) return { lat: j.result.latitude, lon: j.result.longitude };
+    } catch (e) {}
+  }
   const qs = [loc, loc + ', UK']; if (pc) qs.push(pc + ', UK'); qs.push(loc.split(',')[0] + ', London, UK');
   for (const q of qs) {
     const g = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), { headers: UA })
