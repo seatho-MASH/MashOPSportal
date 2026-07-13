@@ -15,7 +15,7 @@ async function geocode(loc) {
     try {
       const j = await fetch('https://api.postcodes.io/postcodes/' + encodeURIComponent(pc.replace(/\s+/g, '')))
         .then(r => r.json());
-      if (j && j.result && j.result.latitude != null) return { lat: j.result.latitude, lon: j.result.longitude, via: 'postcode' };
+      if (j && j.result && j.result.latitude != null) return { lat: j.result.latitude, lon: j.result.longitude };
     } catch (e) {}
   }
   const out = (loc.match(/\b[A-Z]{1,2}\d[A-Z\d]?\b/i) || [])[0];
@@ -23,7 +23,7 @@ async function geocode(loc) {
     try {
       const j = await fetch('https://api.postcodes.io/outcodes/' + encodeURIComponent(out.replace(/\s+/g, '')))
         .then(r => r.json());
-      if (j && j.result && j.result.latitude != null) return { lat: j.result.latitude, lon: j.result.longitude, via: 'outcode' };
+      if (j && j.result && j.result.latitude != null) return { lat: j.result.latitude, lon: j.result.longitude };
     } catch (e) {}
   }
   return null;
@@ -35,14 +35,19 @@ function dist(la1, lo1, la2, lo2) {
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-// Nearest station from the bundled UK stations list (no external map API).
-function nearest(lat, lon) {
-  let best = null, bd = 1e9;
-  for (const s of STATIONS) {
-    const d = dist(lat, lon, s[1], s[2]);
-    if (d < bd) { bd = d; best = s[0]; }
+// Nearest N stations from the bundled list (no external map API), deduped by name.
+function nearestOptions(lat, lon, n = 3) {
+  const scored = STATIONS
+    .map(s => ({ name: s[0], label: s[3], dist: +dist(lat, lon, s[1], s[2]).toFixed(2) }))
+    .sort((a, b) => a.dist - b.dist);
+  const out = [], seen = new Set();
+  for (const s of scored) {
+    const k = s.name.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(s);
+    if (out.length >= n) break;
   }
-  return best ? { station: best, dist: +bd.toFixed(2) } : null;
+  return out;
 }
 
 export default async (req) => {
@@ -54,14 +59,20 @@ export default async (req) => {
   let venue = '';
   try { const sp = await eventFromSharePoint(id, tok); venue = (sp && sp.location) || ''; }
   catch (e) { return json({ error: String(e.message || e) }, 502); }
-  if (!venue) return json({ venue: '', station: null });
+  if (!venue) return json({ venue: '', station: null, options: [] });
 
   const g = await geocode(venue);
-  if (!g) return json({ venue, station: null });
+  if (!g) return json({ venue, station: null, options: [] });
 
-  const n = nearest(g.lat, g.lon);
-  if (!n) return json({ venue, station: null });
-  return json({ venue, station: n.station, dist: n.dist });
+  const options = nearestOptions(g.lat, g.lon, 3);
+  const top = options[0] || null;
+  return json({
+    venue,
+    station: top ? top.name : null,
+    stationLabel: top ? top.label : null,
+    dist: top ? top.dist : null,
+    options,
+  });
 };
 
 export const config = { path: '/api/nearest-station' };
