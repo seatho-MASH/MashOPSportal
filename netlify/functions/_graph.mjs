@@ -64,6 +64,8 @@ export async function eventFromSharePoint(eventId, tok) {
     fullName:  col(f, 'Title') || col(f, 'ShortName'),
     startDate: col(f, 'StartDate'),
     endDate:   col(f, 'EndDate'),
+    buildDays: +col(f, 'BuildDays') || 0,
+    breakdownDays: +col(f, 'BreakdownDays') || 0,
   };
 }
 

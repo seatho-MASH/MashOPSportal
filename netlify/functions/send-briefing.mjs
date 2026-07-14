@@ -12,28 +12,33 @@ const icsEsc = s => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;
 const hhmm = t => { const m = String(t || '').match(/(\d{1,2})\D?(\d{2})/); return m ? String(m[1]).padStart(2, '0') + m[2] : null; };
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
 
-function buildICS(ev) {
-  const d = (ev.date || '').replace(/-/g, '');
-  const a = hhmm(ev.arrival), f = hhmm(ev.finish);
-  let dtStart, dtEnd;
-  if (d && a) { dtStart = 'DTSTART:' + d + 'T' + a + '00'; dtEnd = 'DTEND:' + d + 'T' + (f || a) + '00'; }
-  else if (d) { const nd = String(+d + 1); dtStart = 'DTSTART;VALUE=DATE:' + d; dtEnd = 'DTEND;VALUE=DATE:' + nd; }
-  else return null;
-  const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mash Media//Ops Portal//EN', 'METHOD:REQUEST',
-    'BEGIN:VEVENT',
-    'UID:' + (ev.eventId || 'ev') + '-' + Date.now() + '@mashmedia.net',
-    'DTSTAMP:' + stamp() + 'Z',
-    dtStart, dtEnd,
-    'SUMMARY:' + icsEsc('Working: ' + (ev.name || ev.eventId)),
-    'LOCATION:' + icsEsc(ev.venue || ''),
-    'DESCRIPTION:' + icsEsc(
-      [ev.name, ev.venue ? 'Venue: ' + ev.venue : '', ev.arrival ? 'Arrive: ' + ev.arrival : '',
-       ev.finish ? 'Finish: ' + ev.finish : '', ev.dressCode ? 'Dress: ' + ev.dressCode : '',
-       ev.station ? 'Nearest station: ' + ev.station : ''].filter(Boolean).join('\n')),
-    'END:VEVENT', 'END:VCALENDAR',
+const icsDate = d => (d || '').slice(0, 10).replace(/-/g, '');
+function dAdd(d, n) { const x = new Date((d || '').slice(0, 10) + 'T00:00:00Z'); if (isNaN(x.getTime())) return (d || '').slice(0, 10); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+function vevent(uid, dtStart, dtEnd, summary, ev) {
+  return [
+    'BEGIN:VEVENT', 'UID:' + uid + '@mashmedia.net', 'DTSTAMP:' + stamp() + 'Z', dtStart, dtEnd,
+    'SUMMARY:' + icsEsc(summary), 'LOCATION:' + icsEsc(ev.venue || ''),
+    'DESCRIPTION:' + icsEsc([ev.name, ev.venue ? 'Venue: ' + ev.venue : '', ev.arrival ? 'Arrive: ' + ev.arrival : '', ev.finish ? 'Finish: ' + ev.finish : '', ev.dressCode ? 'Dress: ' + ev.dressCode : '', ev.station ? 'Nearest station: ' + ev.station : ''].filter(Boolean).join('\n')),
+    'END:VEVENT',
   ];
-  return lines.join('\r\n');
+}
+// Separate build / event / breakdown calendar entries.
+function buildICS(ev, opts) {
+  opts = opts || {};
+  const start = (ev.startDate || ev.date || '').slice(0, 10);
+  if (!start) return null;
+  const end = (ev.endDate || ev.startDate || ev.date || '').slice(0, 10) || start;
+  const a = hhmm(ev.arrival), f = hhmm(ev.finish);
+  const bd = +ev.buildDays || 0, kd = +ev.breakdownDays || 0;
+  const base = (ev.eventId || 'ev') + '-' + Date.now();
+  const blocks = [];
+  if (bd > 0 && opts.build) blocks.push(vevent(base + '-build', 'DTSTART;VALUE=DATE:' + icsDate(dAdd(start, -bd)), 'DTEND;VALUE=DATE:' + icsDate(start), 'Build: ' + (ev.name || ev.eventId), ev));
+  let es, ee;
+  if (a) { es = 'DTSTART:' + icsDate(start) + 'T' + a + '00'; ee = 'DTEND:' + icsDate(end) + 'T' + (f || a) + '00'; }
+  else { es = 'DTSTART;VALUE=DATE:' + icsDate(start); ee = 'DTEND;VALUE=DATE:' + icsDate(dAdd(end, 1)); }
+  blocks.push(vevent(base + '-event', es, ee, 'Working: ' + (ev.name || ev.eventId), ev));
+  if (kd > 0 && opts.breakdown) blocks.push(vevent(base + '-breakdown', 'DTSTART;VALUE=DATE:' + icsDate(dAdd(end, 1)), 'DTEND;VALUE=DATE:' + icsDate(dAdd(end, kd + 1)), 'Breakdown: ' + (ev.name || ev.eventId), ev));
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mash Media//Ops Portal//EN', 'METHOD:REQUEST'].concat(...blocks).concat(['END:VCALENDAR']).join('\r\n');
 }
 
 function emailHTML(ev, name) {
@@ -72,20 +77,20 @@ export default async (req) => {
   let tok;
   try { tok = await graphToken(); } catch (e) { return json({ error: String(e.message || e) }, 500); }
 
-  // Pull the venue live from SharePoint if the caller didn't supply one.
-  if (!ev.venue && ev.eventId) {
-    try { const sp = await eventFromSharePoint(ev.eventId, tok); if (sp && sp.location) ev.venue = sp.location; }
-    catch (e) { /* non-fatal: send without venue */ }
+  // Pull venue + dates (and build/breakdown days) live from SharePoint.
+  if (ev.eventId) {
+    try { const sp = await eventFromSharePoint(ev.eventId, tok);
+      if (sp) { if (!ev.venue && sp.location) ev.venue = sp.location; ev.startDate = sp.startDate; ev.endDate = sp.endDate; ev.buildDays = sp.buildDays; ev.breakdownDays = sp.breakdownDays; }
+    } catch (e) { /* non-fatal */ }
   }
-
-  const ics = buildICS(ev);
-  const attachments = ics ? [{
-    '@odata.type': '#microsoft.graph.fileAttachment', name: 'invite.ics',
-    contentType: 'text/calendar; method=REQUEST', contentBytes: Buffer.from(ics, 'utf-8').toString('base64'),
-  }] : [];
 
   const sent = [], failed = [];
   for (const r of recipients) {
+    const ics = buildICS(ev, { build: !!r.build, breakdown: !!r.breakdown });
+    const attachments = ics ? [{
+      '@odata.type': '#microsoft.graph.fileAttachment', name: 'invite.ics',
+      contentType: 'text/calendar; method=REQUEST', contentBytes: Buffer.from(ics, 'utf-8').toString('base64'),
+    }] : [];
     const message = {
       message: {
         subject: 'You’re working ' + (ev.name || ev.eventId),
