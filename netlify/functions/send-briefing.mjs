@@ -41,12 +41,13 @@ function buildICS(ev, opts) {
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mash Media//Ops Portal//EN', 'METHOD:REQUEST'].concat(...blocks).concat(['END:VCALENDAR']).join('\r\n');
 }
 
-function emailHTML(ev, name) {
+function emailHTML(ev, name, role) {
   const row = (k, v) => v ? `<tr><td style="padding:4px 14px 4px 0;color:#66707d">${esc(k)}</td><td style="padding:4px 0;font-weight:600">${esc(v)}</td></tr>` : '';
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1f2733;font-size:14px;line-height:1.5">
     <p>Hi ${esc((name || '').split(' ')[0] || 'there')},</p>
-    <p>You're booked to work <strong>${esc(ev.name || ev.eventId)}</strong>. Here are your on-site details — a calendar invite is attached.</p>
+    <p>You're booked to work <strong>${esc(ev.name || ev.eventId)}</strong>${role ? ` as <strong>${esc(role)}</strong>` : ''}. Here are your on-site details — a calendar invite is attached.</p>
     <table style="border-collapse:collapse;margin:14px 0">
+      ${row('Your role', role)}
       ${row('Date', ev.dateLabel || ev.date)}
       ${row('Venue', ev.venue)}
       ${row('Arrive on site', ev.arrival)}
@@ -94,7 +95,7 @@ export default async (req) => {
     const message = {
       message: {
         subject: 'You’re working ' + (ev.name || ev.eventId),
-        body: { contentType: 'HTML', content: emailHTML(ev, r.name) },
+        body: { contentType: 'HTML', content: emailHTML(ev, r.name, r.role) },
         toRecipients: [{ emailAddress: { address: r.email } }],
         attachments,
       },
