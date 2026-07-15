@@ -14,6 +14,8 @@ const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+
 
 const icsDate = d => (d || '').slice(0, 10).replace(/-/g, '');
 function dAdd(d, n) { const x = new Date((d || '').slice(0, 10) + 'T00:00:00Z'); if (isNaN(x.getTime())) return (d || '').slice(0, 10); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+function niceDate(iso) { const d = new Date((iso || '').slice(0, 10) + 'T00:00:00Z'); if (isNaN(d.getTime())) return (iso || '').slice(0, 10); return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }); }
+function dateLabel(ev) { const s = (ev.startDate || ev.date || '').slice(0, 10), e = (ev.endDate || '').slice(0, 10); if (s && e && e !== s) return niceDate(s) + ' – ' + niceDate(e); return ev.dateLabel || (s ? niceDate(s) : '') || ev.date || ''; }
 function vevent(uid, dtStart, dtEnd, summary, ev) {
   return [
     'BEGIN:VEVENT', 'UID:' + uid + '@mashmedia.net', 'DTSTAMP:' + stamp() + 'Z', dtStart, dtEnd,
@@ -33,10 +35,18 @@ function buildICS(ev, opts) {
   const base = (ev.eventId || 'ev') + '-' + Date.now();
   const blocks = [];
   if (bd > 0 && opts.build) blocks.push(vevent(base + '-build', 'DTSTART;VALUE=DATE:' + icsDate(dAdd(start, -bd)), 'DTEND;VALUE=DATE:' + icsDate(start), 'Build: ' + (ev.name || ev.eventId), ev));
-  let es, ee;
-  if (a) { es = 'DTSTART:' + icsDate(start) + 'T' + a + '00'; ee = 'DTEND:' + icsDate(end) + 'T' + (f || a) + '00'; }
-  else { es = 'DTSTART;VALUE=DATE:' + icsDate(start); ee = 'DTEND;VALUE=DATE:' + icsDate(dAdd(end, 1)); }
-  blocks.push(vevent(base + '-event', es, ee, 'Working: ' + (ev.name || ev.eventId), ev));
+  const nm = ev.name || ev.eventId;
+  const days = []; for (let d = start, n = 0; d <= end && n < 60; d = dAdd(d, 1), n++) days.push(d);
+  if (a) {
+    // timed event → a working block for EACH day (arrival–finish), so multi-day events show every day
+    days.forEach((d, i) => {
+      const summ = 'Working: ' + nm + (days.length > 1 ? ' (day ' + (i + 1) + ' of ' + days.length + ')' : '');
+      blocks.push(vevent(base + '-event' + i, 'DTSTART:' + icsDate(d) + 'T' + a + '00', 'DTEND:' + icsDate(d) + 'T' + (f || a) + '00', summ, ev));
+    });
+  } else {
+    // all-day event → single block spanning start..end inclusive
+    blocks.push(vevent(base + '-event', 'DTSTART;VALUE=DATE:' + icsDate(start), 'DTEND;VALUE=DATE:' + icsDate(dAdd(end, 1)), 'Working: ' + nm, ev));
+  }
   if (kd > 0 && opts.breakdown) blocks.push(vevent(base + '-breakdown', 'DTSTART;VALUE=DATE:' + icsDate(dAdd(end, 1)), 'DTEND;VALUE=DATE:' + icsDate(dAdd(end, kd + 1)), 'Breakdown: ' + (ev.name || ev.eventId), ev));
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mash Media//Ops Portal//EN', 'METHOD:REQUEST'].concat(...blocks).concat(['END:VCALENDAR']).join('\r\n');
 }
@@ -48,7 +58,7 @@ function emailHTML(ev, name, role) {
     <p>You're booked to work <strong>${esc(ev.name || ev.eventId)}</strong>${role ? ` as <strong>${esc(role)}</strong>` : ''}. Here are your on-site details — a calendar invite is attached.</p>
     <table style="border-collapse:collapse;margin:14px 0">
       ${row('Your role', role)}
-      ${row('Date', ev.dateLabel || ev.date)}
+      ${row('Dates', dateLabel(ev))}
       ${row('Venue', ev.venue)}
       ${row('Arrive on site', ev.arrival)}
       ${row('Finish', ev.finish)}
