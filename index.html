@@ -253,7 +253,8 @@ function _byId(a,b,deep){const m=new Map();(a||[]).forEach(x=>x&&m.set(x.id,x));
 function _lists(sv,lo,deep){sv=sv||{};lo=lo||{};const o={...sv};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]=_byId(sv[k],lo[k],deep);return o;}
 function _maps(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]={...(sv[k]||{}),...(lo[k]||{})};return o;}
 function _seenM(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)])){const a=sv[k]||{},b=lo[k]||{};o[k]={baseline:{...(a.baseline||{}),...(b.baseline||{})},added:{...(a.added||{}),...(b.added||{})}};}return o;}
-function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),staff:_lists(sv.staff,lo.staff,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes),onsite:Object.assign({},sv.onsite||{},lo.onsite||{})};}
+function _rooms(sv,lo){sv=sv||{};lo=lo||{};const o={};new Set([...Object.keys(sv),...Object.keys(lo)]).forEach(k=>{o[k]=Object.assign({},sv[k]||{},lo[k]||{});});return o;}
+function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),staff:_lists(sv.staff,lo.staff,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes),onsite:Object.assign({},sv.onsite||{},lo.onsite||{}),rooms:_rooms(sv.rooms,lo.rooms)};}
 function isEditing(){const ae=document.activeElement;return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&$('#tabBody')&&$('#tabBody').contains(ae));}
 function sortRows(rows,mode){const r=[...rows];
   if(mode==='added-new')r.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
@@ -288,8 +289,9 @@ async function loadSummary(){
 }
 
 async function loadStore(){
-  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; S.store.staff??={}; S.store.onsite??={}; }
-  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{},onsite:{}}; }
+  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; S.store.staff??={}; S.store.onsite??={}; S.store.rooms??={}; }
+  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{},onsite:{},rooms:{}}; }
+  loadRoomTotals();
 }
 let saveTimer,saving=false;
 function queueSave(){
@@ -322,6 +324,25 @@ async function autoSync(){
   }catch{}
 }
 function clearsave(){if(saveTimer)clearTimeout(saveTimer);}
+
+/* ---------- room allocation ---------- */
+const CAL_API='https://mash-team-portal.netlify.app'; // calendar feed → room totals
+var ROOM_TOTALS={}; // eventId -> total rooms booked (entered on the calendar)
+function roomsMap(id){S.store.rooms??={};return (S.store.rooms[id]??={});}
+function roomOn(id,pid){return !!roomsMap(id)[pid];}
+function setRoom(id,pid,on){const m=roomsMap(id);if(on)m[pid]=true;else delete m[pid];queueSave();refreshRoomBars();}
+function clearRoom(id,pid){const m=roomsMap(id);if(m[pid])delete m[pid];}
+function roomsReq(id){return Object.keys(roomsMap(id)).length;}
+function roomsTotal(id){return ROOM_TOTALS[id]!=null?ROOM_TOTALS[id]:null;}
+function roomBox(id,pid){const cb=el('input');cb.type='checkbox';cb.checked=roomOn(id,pid);cb.title='Room required';cb.onchange=()=>setRoom(id,pid,cb.checked);return cb;}
+function roomSummaryHTML(id){const req=roomsReq(id),tot=roomsTotal(id);
+  let s='🛏 <strong>'+req+'</strong> room'+(req===1?'':'s')+' required';
+  if(tot!=null){const over=req>tot;s+=' — <strong style="'+(over?'color:#c0392b':'')+'">'+req+' / '+tot+'</strong> allocated'+(over?' <span style="color:#c0392b">(over by '+(req-tot)+')</span>':(req<tot?' <span class="muted">('+(tot-req)+' spare)</span>':''));}
+  else s+=' <span class="muted">· set the room allocation on the calendar event</span>';
+  return s;}
+function roomBar(id){const d=el('div','banner');d.classList.add('roombar');d.innerHTML=roomSummaryHTML(id);d.style.background='var(--bg)';return d;}
+function refreshRoomBars(){if(!S.selected)return;document.querySelectorAll('.roombar').forEach(b=>{b.innerHTML=roomSummaryHTML(S.selected);});}
+async function loadRoomTotals(){try{const r=await fetch(CAL_API.replace(/\/$/,'')+'/api/calendar');const d=await r.json();(d.events||[]).forEach(e=>{if(e&&e.id!=null&&e.roomsTotal!=null)ROOM_TOTALS[e.id]=+e.roomsTotal||0;});refreshRoomBars();}catch(e){}}
 
 async function loadAttendees(id){
   if(S.attendees[id])return S.attendees[id];
@@ -487,6 +508,7 @@ function renderDelegates(box){
   const id=S.selected;
   box.appendChild(el('div','banner','Delegates flow in automatically once their <strong>Joining Instructions are signed</strong> in HubSpot (approvals stay with marketing). You can also add walk-ins manually below.'));
   box.appendChild(delegateAddCard(box,id));
+  box.appendChild(roomBar(id));
   if(S.loadingAttendees&&!S.attendees[id]){box.appendChild(el('div','empty','<span class="spinner"></span> Loading attendees from HubSpot…'));return;}
   const all=allDelegates(id);
   const tb=el('div','toolbar');
@@ -505,7 +527,7 @@ function renderDelegates(box){
   if(!all.length){box.appendChild(el('div','empty','<div class="big">No confirmed delegates yet</div>They will appear here as joining instructions are signed, or add walk-ins above.'));return;}
   const rows=sortRows(all,delSort);
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th></th></tr></thead>';
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th>Notes</th><th></th></tr></thead>';
   const tbody=el('tbody');
   rows.forEach(a=>{
     const tr=el('tr');tr.dataset.s=(a.name+' '+a.company+' '+a.jobtitle+' '+a.email).toLowerCase();
@@ -516,9 +538,10 @@ function renderDelegates(box){
       <td>${esc(a.company)||'<span class=muted>—</span>'}</td>
       <td>${a.email?`<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>`:'<span class=muted>—</span>'}</td>
       <td>${esc(a.dietary)||'<span class=muted>—</span>'}</td>
-      <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td class="noteCell"></td><td></td>`;
+      <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td class="roomCell" style="text-align:center"></td><td class="noteCell"></td><td></td>`;
+    tr.querySelector('.roomCell').appendChild(roomBox(id,a.id));
     tr.querySelector('.noteCell').appendChild(cellInput(delNote(id,a.id),v=>setDelNote(id,a.id,v),'Add note…'));
-    if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{(S.store.delegates[id]||[]).forEach(y=>{if(y.id===a.id)y.deleted=true;});queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
+    if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{(S.store.delegates[id]||[]).forEach(y=>{if(y.id===a.id)y.deleted=true;});clearRoom(id,a.id);queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
     tbody.appendChild(tr);
   });
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
@@ -558,6 +581,7 @@ function renderSponsors(box){
       {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
   };
   tb.appendChild(ex);box.appendChild(tb);
+  box.appendChild(roomBar(id));
   if(!_act.length){box.appendChild(el('div','empty','<div class="big">No sponsors added yet</div>Add your event sponsors above, then log the people each is sending.'));return;}
   [..._act].sort((a,b)=>(a.company||'').localeCompare(b.company||'')).forEach(sp=>{
     const card=el('div','sponsor');
@@ -578,8 +602,9 @@ function renderSponsors(box){
       const row=el('div','addrow');row.style.cssText='flex:1 1 100%;margin-top:4px';
       const mk=(ph,key,flex)=>{const i=el('input');i.placeholder=ph;i.value=c[key]||'';i.style.flex=flex;i.oninput=()=>{c[key]=i.value;queueSave();};return i;};
       row.append(mk('Job title','jobtitle','1 1 120px'),mk('Email','email','1 1 150px'),mk('Dietary','dietary','1 1 110px'),mk('Accessibility','accessibility','1 1 110px'),mk('Notes','note','1 1 140px'));
+      const _rl=el('label');_rl.style.cssText='display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mut);white-space:nowrap';_rl.append(roomBox(id,c.id),document.createTextNode('Room'));row.appendChild(_rl);
       const x=el('button','btn sm ghost danger','Remove');
-      x.onclick=()=>{c.deleted=true;queueSave();updateTabCounts();renderSponsors(box);};
+      x.onclick=()=>{c.deleted=true;clearRoom(id,c.id);queueSave();updateTabCounts();renderSponsors(box);};
       row.appendChild(x);a.append(head,row);card.appendChild(a);
     });
     const row=el('div','addrow');
@@ -669,17 +694,19 @@ function renderSpeakers(box){
     fileRow.append(file,btn);
     add.append(ta,fileRow);box.appendChild(add);
   }
+  box.appendChild(roomBar(id));
   if(!_act.length){box.appendChild(el('div','empty','<div class="big">No speakers yet</div>Add them individually or bulk-upload a list.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th></th></tr></thead>';
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th>Notes</th><th></th></tr></thead>';
   const tbody=el('tbody');
   sortRows(_act,spkSort).forEach(s=>{
     const tr=el('tr');
-    tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td class="c-ses"></td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td>`;
+    tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td class="c-ses"></td><td class="c-di"></td><td class="c-ac"></td><td class="c-room" style="text-align:center"></td><td class="c-note"></td>`;
     const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(s[key],v=>{s[key]=v;queueSave();}));};
     bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-ses','session');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','note');
+    tr.querySelector('.c-room').appendChild(roomBox(id,s.id));
     const td=el('td');const x=el('button','btn sm ghost','✕');
-    x.onclick=()=>{s.deleted=true;queueSave();updateTabCounts();renderSpeakers(box);};
+    x.onclick=()=>{s.deleted=true;clearRoom(id,s.id);queueSave();updateTabCounts();renderSpeakers(box);};
     td.appendChild(x);tr.appendChild(td);tbody.appendChild(tr);
   });
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
@@ -704,10 +731,10 @@ function field(label,type,ph){
 let chkSearch='',chkSort='name';
 function buildCheckinRows(id){
   const rows=[];
-  allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',notes:delNote(id,a.id),note:a.manual?'walk-in':''}));
-  (S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).forEach(sp=>sp.contacts.filter(c=>!c.deleted).forEach(c=>rows.push({type:'Sponsor',cls:'spo',scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
-  (S.store.speakers[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Speaker',cls:'spk',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
-  ((S.store.staff||{})[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Staff',cls:'stf',scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company||'',email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.external?'external':'staff'}));
+  allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',pid:a.id,scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',notes:delNote(id,a.id),note:a.manual?'walk-in':''}));
+  (S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).forEach(sp=>sp.contacts.filter(c=>!c.deleted).forEach(c=>rows.push({type:'Sponsor',cls:'spo',pid:c.id,scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
+  (S.store.speakers[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Speaker',cls:'spk',pid:s2.id,scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
+  ((S.store.staff||{})[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Staff',cls:'stf',pid:s2.id,scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company||'',email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.external?'external':'staff'}));
   return rows;
 }
 function renderCheckin(box){
@@ -728,6 +755,7 @@ function renderCheckin(box){
     {label:'Type',key:'type'},{label:'Scan ID',key:'scanId'},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},
     {label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},
     {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},
+    {label:'Room required',get:r=>roomOn(id,r.pid)?'Yes':''},
     {label:'Notes',key:'notes'},{label:'Detail',key:'note'}]));
   tb.append(pr,ex);
   box.appendChild(tb);
@@ -735,7 +763,7 @@ function renderCheckin(box){
   box.appendChild(ph);
   if(!all.length){box.appendChild(el('div','empty','<div class="big">Nobody to list yet</div>Delegates, sponsor attendees and speakers will appear here as they are added.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th style="width:34px">In</th><th>Name</th><th>Scan ID</th><th>Added</th><th>Type</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Notes</th><th>Detail</th></tr></thead>';
+  t.innerHTML='<thead><tr><th style="width:34px">In</th><th>Name</th><th>Scan ID</th><th>Added</th><th>Type</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th>Notes</th><th>Detail</th></tr></thead>';
   const tbody=el('tbody');
   all.forEach(r=>{
     const tr=el('tr');tr.dataset.s=(r.name+' '+r.company+' '+r.jobtitle+' '+r.type).toLowerCase();
@@ -748,6 +776,7 @@ function renderCheckin(box){
       <td>${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:'<span class=muted>—</span>'}</td>
       <td>${esc(r.dietary)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.accessibility)||'<span class=muted>—</span>'}</td>
+      <td style="text-align:center">${roomOn(id,r.pid)?'🛏':'<span class=muted>—</span>'}</td>
       <td>${esc(r.notes)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.note)||'<span class=muted>—</span>'}</td>`;
     tbody.appendChild(tr);
@@ -827,6 +856,7 @@ function renderStaff(box){
   const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{await loadStaff(true);renderStaff(box);};
   tb.append(si,sortSelect(stfSort,v=>{stfSort=v;renderStaff(box);}),rc,ex,exAll,rf);box.appendChild(tb);
   // attending (editable) section — rebuildable
+  box.appendChild(roomBar(id));
   const attWrap=el('div');box.appendChild(attWrap);
   function renderAtt(){
     attWrap.innerHTML='';
@@ -834,15 +864,16 @@ function renderStaff(box){
     if(!att.length)return;
     attWrap.appendChild(el('div','grouphdr','ATTENDING THIS EVENT'));
     const aw=el('div','tablewrap');const at=el('table');
-    at.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Role</th><th title="Needed for build days">Build</th><th title="Needed for breakdown days">Breakdown</th><th></th></tr></thead>';
+    at.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Role</th><th title="Needed for build days">Build</th><th title="Needed for breakdown days">Breakdown</th><th title="Room required" style="text-align:center">Room</th><th></th></tr></thead>';
     const atb=el('tbody');
     sortRows(att,stfSort).forEach(st=>{
       const tr=el('tr');
-      tr.innerHTML=`<td><strong>${esc(st.name)}</strong>${st.external?' <span class="pill">external</span>':''}</td><td class="rid">${esc(scanOf(st))||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${st.email?`<a href="mailto:${esc(st.email)}">${esc(st.email)}</a>`:'—'}</td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td><td class="c-build" style="text-align:center"></td><td class="c-break" style="text-align:center"></td>`;
+      tr.innerHTML=`<td><strong>${esc(st.name)}</strong>${st.external?' <span class="pill">external</span>':''}</td><td class="rid">${esc(scanOf(st))||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${st.email?`<a href="mailto:${esc(st.email)}">${esc(st.email)}</a>`:'—'}</td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td><td class="c-build" style="text-align:center"></td><td class="c-break" style="text-align:center"></td><td class="c-room" style="text-align:center"></td>`;
       const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(st[key],v=>{st[key]=v;queueSave();}));};
       bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','role');
       const chk=(sel,key)=>{const cb=el('input');cb.type='checkbox';cb.checked=!!st[key];cb.onchange=()=>{st[key]=cb.checked;queueSave();};tr.querySelector(sel).appendChild(cb);};chk('.c-build','build');chk('.c-break','breakdown');
-      const td=el('td');const x=el('button','btn sm ghost','✕');x.title='Remove';x.onclick=()=>{st.deleted=true;queueSave();updateTabCounts();renderAtt();refreshCount();syncChecks();};td.appendChild(x);tr.appendChild(td);atb.appendChild(tr);
+      tr.querySelector('.c-room').appendChild(roomBox(id,st.id));
+      const td=el('td');const x=el('button','btn sm ghost','✕');x.title='Remove';x.onclick=()=>{st.deleted=true;clearRoom(id,st.id);queueSave();updateTabCounts();renderAtt();refreshCount();syncChecks();};td.appendChild(x);tr.appendChild(td);atb.appendChild(tr);
     });
     at.appendChild(atb);aw.appendChild(at);attWrap.appendChild(aw);
   }
@@ -859,7 +890,7 @@ function renderStaff(box){
     const cb=el('input');cb.type='checkbox';cb.dataset.rid=pn.id;cb.checked=set0.has(pn.id);
     cb.onchange=()=>{
       if(cb.checked){list.push({id:uid(),rosterId:pn.id,external:false,scanId:pn.scanId,name:pn.name,firstname:pn.firstname,lastname:pn.lastname,email:pn.email,jobtitle:pn.jobtitle,company:pn.company||'Mash Media',dietary:pn.dietary||'',accessibility:pn.accessibility||'',note:'',addedAt:new Date().toISOString()});}
-      else{list.forEach(x=>{if(x.rosterId===pn.id&&!x.deleted)x.deleted=true;});}
+      else{list.forEach(x=>{if(x.rosterId===pn.id&&!x.deleted){x.deleted=true;clearRoom(S.selected,x.id);}});}
       queueSave();updateTabCounts();renderAtt();refreshCount();
     };
     const ctd=el('td');ctd.appendChild(cb);tr.appendChild(ctd);

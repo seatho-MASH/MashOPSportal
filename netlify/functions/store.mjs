@@ -12,8 +12,8 @@ function json(body, status = 200) {
 async function readState(store) {
   const existing = await store.get(KEY, { type: 'json' });
   return existing && typeof existing === 'object'
-    ? { sponsors: existing.sponsors || {}, speakers: existing.speakers || {}, delegates: existing.delegates || {}, seen: existing.seen || {}, notes: existing.notes || {}, staff: existing.staff || {}, onsite: existing.onsite || {} }
-    : { sponsors: {}, speakers: {}, delegates: {}, seen: {}, notes: {}, staff: {}, onsite: {} };
+    ? { sponsors: existing.sponsors || {}, speakers: existing.speakers || {}, delegates: existing.delegates || {}, seen: existing.seen || {}, notes: existing.notes || {}, staff: existing.staff || {}, onsite: existing.onsite || {}, rooms: existing.rooms || {} }
+    : { sponsors: {}, speakers: {}, delegates: {}, seen: {}, notes: {}, staff: {}, onsite: {}, rooms: {} };
 }
 
 export default async (req) => {
@@ -42,6 +42,7 @@ export default async (req) => {
       notes: incoming.notes ?? current.notes,
       staff: incoming.staff ?? current.staff,
       onsite: incoming.onsite ?? current.onsite,
+      rooms: incoming.rooms ?? current.rooms,
       updatedAt: new Date().toISOString(),
     };
     await store.setJSON(KEY, next);

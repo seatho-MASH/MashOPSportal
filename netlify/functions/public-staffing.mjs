@@ -25,19 +25,21 @@ export default async (req) => {
   const st = (await store.get(KEY, { type: 'json' })) || {};
   const staffAll = st.staff || {};
   const onsiteAll = st.onsite || {};
+  const roomsAll = st.rooms || {};
+  const roomsReq = k => Object.keys(roomsAll[k] || {}).length;
   const id = new URL(req.url).searchParams.get('event');
 
   if (id) {
     const staff = (staffAll[id] || [])
       .filter(x => !x.deleted)
       .map(x => ({ name: x.name, jobtitle: x.jobtitle || '', external: !!x.external }));
-    return json({ event: id, staff, onsite: onsiteAll[id] || {} });
+    return json({ event: id, staff, onsite: onsiteAll[id] || {}, roomsRequired: roomsReq(id) });
   }
 
   // Summary for all events: count + on-site details (used to badge the calendar).
   const events = {};
-  for (const k of new Set([...Object.keys(staffAll), ...Object.keys(onsiteAll)])) {
-    events[k] = { count: (staffAll[k] || []).filter(x => !x.deleted).length, onsite: onsiteAll[k] || {} };
+  for (const k of new Set([...Object.keys(staffAll), ...Object.keys(onsiteAll), ...Object.keys(roomsAll)])) {
+    events[k] = { count: (staffAll[k] || []).filter(x => !x.deleted).length, onsite: onsiteAll[k] || {}, roomsRequired: roomsReq(k) };
   }
   return json({ events });
 };
