@@ -26,14 +26,31 @@ export default async (req) => {
   const staffAll = st.staff || {};
   const onsiteAll = st.onsite || {};
   const roomsAll = st.rooms || {};
+  const speakersAll = st.speakers || {};
+  const sponsorsAll = st.sponsors || {};
+  const delegatesAll = st.delegates || {};
   const roomsReq = k => Object.keys(roomsAll[k] || {}).length;
+  // Split the allocated rooms by attendee type (live delegates aren't in the store, so unknown ids fall to Delegate).
+  const roomsByType = k => {
+    const by = { Delegate: 0, Sponsor: 0, Speaker: 0, Staff: 0 };
+    const staffIds = new Set((staffAll[k] || []).map(x => x.id));
+    const spkIds = new Set((speakersAll[k] || []).map(x => x.id));
+    const spoIds = new Set(); (sponsorsAll[k] || []).forEach(sp => (sp.contacts || []).forEach(c => spoIds.add(c.id)));
+    for (const pid of Object.keys(roomsAll[k] || {})) {
+      if (staffIds.has(pid)) by.Staff++;
+      else if (spkIds.has(pid)) by.Speaker++;
+      else if (spoIds.has(pid)) by.Sponsor++;
+      else by.Delegate++;
+    }
+    return by;
+  };
   const id = new URL(req.url).searchParams.get('event');
 
   if (id) {
     const staff = (staffAll[id] || [])
       .filter(x => !x.deleted)
       .map(x => ({ name: x.name, jobtitle: x.jobtitle || '', external: !!x.external }));
-    return json({ event: id, staff, onsite: onsiteAll[id] || {}, roomsRequired: roomsReq(id) });
+    return json({ event: id, staff, onsite: onsiteAll[id] || {}, roomsRequired: roomsReq(id), roomsByType: roomsByType(id) });
   }
 
   // Summary for all events: count + on-site details (used to badge the calendar).

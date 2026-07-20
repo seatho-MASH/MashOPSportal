@@ -335,10 +335,10 @@ function clearRoom(id,pid){const m=roomsMap(id);if(m[pid])delete m[pid];}
 function roomsReq(id){return Object.keys(roomsMap(id)).length;}
 function roomsTotal(id){return ROOM_TOTALS[id]!=null?ROOM_TOTALS[id]:null;}
 function roomBox(id,pid){const cb=el('input');cb.type='checkbox';cb.checked=roomOn(id,pid);cb.title='Room required';cb.onchange=()=>setRoom(id,pid,cb.checked);return cb;}
-function roomSummaryHTML(id){const req=roomsReq(id),tot=roomsTotal(id);
-  let s='🛏 <strong>'+req+'</strong> room'+(req===1?'':'s')+' required';
-  if(tot!=null){const over=req>tot;s+=' — <strong style="'+(over?'color:#c0392b':'')+'">'+req+' / '+tot+'</strong> allocated'+(over?' <span style="color:#c0392b">(over by '+(req-tot)+')</span>':(req<tot?' <span class="muted">('+(tot-req)+' spare)</span>':''));}
-  else s+=' <span class="muted">· set the room allocation on the calendar event</span>';
+function roomSummaryHTML(id){const alloc=roomsReq(id),tot=roomsTotal(id);
+  let s='🛏 <strong>'+alloc+'</strong> room'+(alloc===1?'':'s')+' allocated';
+  if(tot!=null){const over=alloc>tot;s+=' / <strong style="'+(over?'color:#c0392b':'')+'">'+tot+'</strong> total available'+(over?' <span style="color:#c0392b">(over by '+(alloc-tot)+')</span>':(alloc<tot?' <span class="muted">('+(tot-alloc)+' free)</span>':''));}
+  else s+=' <span class="muted">· set the total available on the calendar event</span>';
   return s;}
 function roomBar(id){const d=el('div','banner');d.classList.add('roombar');d.innerHTML=roomSummaryHTML(id);d.style.background='var(--bg)';return d;}
 function refreshRoomBars(){if(!S.selected)return;document.querySelectorAll('.roombar').forEach(b=>{b.innerHTML=roomSummaryHTML(S.selected);});}
