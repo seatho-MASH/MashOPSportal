@@ -29,30 +29,27 @@ export default async (req) => {
   const speakersAll = st.speakers || {};
   const sponsorsAll = st.sponsors || {};
   const delegatesAll = st.delegates || {};
-  // pids of people who've been removed — their room ticks must not be counted
-  const orphanSet = k => {
-    const s = new Set();
-    (delegatesAll[k] || []).forEach(d => { if (d.deleted) s.add(d.id); });
-    (sponsorsAll[k] || []).forEach(sp => (sp.contacts || []).forEach(c => { if (sp.deleted || c.deleted) s.add(c.id); }));
-    (speakersAll[k] || []).forEach(x => { if (x.deleted) s.add(x.id); });
-    (staffAll[k] || []).forEach(x => { if (x.deleted) s.add(x.id); });
-    return s;
+  // Rooms are keyed per person ("e:email" | "s:scanId" | "r:recordId"), so someone in two lists
+  // counts once. Classify with Speaker > Sponsor > Delegate > Staff, and ignore removed people.
+  const PRI = { Speaker: 1, Sponsor: 2, Delegate: 3, Staff: 4 };
+  const nrm = v => String(v == null ? '' : v).trim().toLowerCase();
+  const roomCtx = k => {
+    const Ae = {}, As = {}, Ai = {}, De = new Set(), Ds = new Set(), Di = new Set();
+    const best = (m, kk, t) => { if (kk && (!m[kk] || PRI[t] < PRI[m[kk]])) m[kk] = t; };
+    const active = (email, scan, id, t) => { best(Ae, nrm(email), t); best(As, scan, t); best(Ai, id, t); };
+    const dead = (email, scan, id) => { const e = nrm(email); if (e) De.add(e); if (scan) Ds.add(scan); if (id) Di.add(id); };
+    (delegatesAll[k] || []).forEach(d => (d.deleted ? dead : active)(d.email, d.scanId, d.id, 'Delegate'));
+    (sponsorsAll[k] || []).forEach(sp => (sp.contacts || []).forEach(c => ((sp.deleted || c.deleted) ? dead : active)(c.email, c.scanId, c.id, 'Sponsor')));
+    (speakersAll[k] || []).forEach(x => (x.deleted ? dead : active)(x.email, x.scanId, x.id, 'Speaker'));
+    (staffAll[k] || []).forEach(x => (x.deleted ? dead : active)(x.email, x.scanId, x.id, 'Staff'));
+    const typeOf = key => key.startsWith('e:') ? Ae[key.slice(2)] : key.startsWith('s:') ? As[key.slice(2)] : key.startsWith('r:') ? Ai[key.slice(2)] : Ai[key];
+    const isOrphan = key => typeOf(key) ? false : (key.startsWith('e:') ? De.has(key.slice(2)) : key.startsWith('s:') ? Ds.has(key.slice(2)) : key.startsWith('r:') ? Di.has(key.slice(2)) : Di.has(key));
+    return { typeOf, isOrphan };
   };
-  const roomsReq = k => { const o = orphanSet(k); return Object.keys(roomsAll[k] || {}).filter(pid => !o.has(pid)).length; };
-  // Split the allocated rooms by attendee type (live delegates aren't in the store, so unknown ids fall to Delegate).
+  const roomsReq = k => { const ctx = roomCtx(k); return Object.keys(roomsAll[k] || {}).filter(key => !ctx.isOrphan(key)).length; };
   const roomsByType = k => {
-    const by = { Delegate: 0, Sponsor: 0, Speaker: 0, Staff: 0 };
-    const o = orphanSet(k);
-    const staffIds = new Set((staffAll[k] || []).filter(x => !x.deleted).map(x => x.id));
-    const spkIds = new Set((speakersAll[k] || []).filter(x => !x.deleted).map(x => x.id));
-    const spoIds = new Set(); (sponsorsAll[k] || []).forEach(sp => { if (!sp.deleted) (sp.contacts || []).forEach(c => { if (!c.deleted) spoIds.add(c.id); }); });
-    for (const pid of Object.keys(roomsAll[k] || {})) {
-      if (o.has(pid)) continue;
-      if (staffIds.has(pid)) by.Staff++;
-      else if (spkIds.has(pid)) by.Speaker++;
-      else if (spoIds.has(pid)) by.Sponsor++;
-      else by.Delegate++;
-    }
+    const ctx = roomCtx(k), by = { Delegate: 0, Sponsor: 0, Speaker: 0, Staff: 0 };
+    for (const key of Object.keys(roomsAll[k] || {})) { if (ctx.isOrphan(key)) continue; by[ctx.typeOf(key) || 'Delegate']++; }
     return by;
   };
   const id = new URL(req.url).searchParams.get('event');

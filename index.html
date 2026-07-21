@@ -329,23 +329,39 @@ function clearsave(){if(saveTimer)clearTimeout(saveTimer);}
 const CAL_API='https://mashportal.netlify.app'; // calendar feed → room totals
 var ROOM_TOTALS={}; // eventId -> total rooms booked (entered on the calendar)
 function roomsMap(id){S.store.rooms??={};return (S.store.rooms[id]??={});}
-function roomOn(id,pid){return !!roomsMap(id)[pid];}
-function setRoom(id,pid,on){const m=roomsMap(id);if(on)m[pid]=true;else delete m[pid];queueSave();refreshRoomBars();}
-function clearRoom(id,pid){const m=roomsMap(id);if(m[pid])delete m[pid];}
-// pids of people who have been removed — their room ticks must not be counted
-function orphanPids(id){
-  const s=new Set();
-  ((S.store.delegates||{})[id]||[]).forEach(d=>{ if(d.deleted)s.add(d.id); });
-  ((S.store.sponsors||{})[id]||[]).forEach(sp=>{ (sp.contacts||[]).forEach(c=>{ if(sp.deleted||c.deleted)s.add(c.id); }); });
-  ((S.store.speakers||{})[id]||[]).forEach(x=>{ if(x.deleted)s.add(x.id); });
-  ((S.store.staff||{})[id]||[]).forEach(x=>{ if(x.deleted)s.add(x.id); });
-  return s;
+// A room belongs to a PERSON, keyed by email (so someone who is e.g. a speaker AND a delegate
+// only counts once and ticking them in one list shows in the other). Falls back to scan ID then record id.
+function personKey(rec){ if(!rec)return ''; const e=String(rec.email||'').trim().toLowerCase(); if(e)return 'e:'+e; const s=(typeof scanOf==='function'?scanOf(rec):rec.scanId)||''; if(s)return 's:'+s; return 'r:'+(rec.id||''); }
+function roomOn(id,rec){return !!roomsMap(id)[personKey(rec)];}
+function setRoom(id,rec,on){const m=roomsMap(id),k=personKey(rec);if(on)m[k]=true;else delete m[k];queueSave();refreshRoomBars();}
+function clearRoom(id,rec){const m=roomsMap(id),k=personKey(rec);if(m[k])delete m[k];}
+// everyone on the event across all lists, split active vs removed
+function eventPeople(id){ const active=[],deleted=[];
+  (S.attendees[id]||[]).forEach(a=>active.push(a));
+  ((S.store.delegates||{})[id]||[]).forEach(d=>(d.deleted?deleted:active).push(d));
+  ((S.store.sponsors||{})[id]||[]).forEach(sp=>(sp.contacts||[]).forEach(c=>((sp.deleted||c.deleted)?deleted:active).push(c)));
+  ((S.store.speakers||{})[id]||[]).forEach(x=>(x.deleted?deleted:active).push(x));
+  ((S.store.staff||{})[id]||[]).forEach(x=>(x.deleted?deleted:active).push(x));
+  return {active,deleted};
 }
-function roomsReq(id){ const orphan=orphanPids(id); return Object.keys(roomsMap(id)).filter(k=>!orphan.has(k)).length; }
-// permanently drop room ticks left behind by removed people, then save
-function pruneRooms(id){ if(!id)return; const m=roomsMap(id), orphan=orphanPids(id); let changed=false; Object.keys(m).forEach(k=>{ if(orphan.has(k)){ delete m[k]; changed=true; } }); if(changed)queueSave(); }
+// keys whose only owner has been removed (so their room tick must not count)
+function orphanKeys(id){ const p=eventPeople(id); const act=new Set(p.active.map(personKey)); const del=new Set();
+  p.deleted.forEach(r=>{ const k=personKey(r); if(!act.has(k))del.add(k); if(r.id&&!act.has('r:'+r.id))del.add(r.id); }); return del; }
+function roomsReq(id){ const orphan=orphanKeys(id); return Object.keys(roomsMap(id)).filter(k=>!orphan.has(k)).length; }
+// convert old record-id keys to person keys (preserving existing ticks & de-duping), drop removed people
+function migrateRooms(id){ if(!id)return; const m=roomsMap(id), p=eventPeople(id); const byId={};
+  p.active.concat(p.deleted).forEach(r=>{ if(r.id)byId[r.id]=r; });
+  const actKeys=new Set(p.active.map(personKey)); const orphan=orphanKeys(id); let changed=false;
+  Object.keys(m).forEach(k=>{
+    if(/^[esr]:/.test(k)){ if(orphan.has(k)){ delete m[k]; changed=true; } return; }
+    const rec=byId[k];
+    if(rec){ const nk=personKey(rec); if(actKeys.has(nk)){ if(nk!==k)m[nk]=true; } delete m[k]; changed=true; }
+    else if(orphan.has(k)){ delete m[k]; changed=true; }
+  });
+  if(changed)queueSave();
+}
 function roomsTotal(id){return ROOM_TOTALS[id]!=null?ROOM_TOTALS[id]:null;}
-function roomBox(id,pid){const cb=el('input');cb.type='checkbox';cb.checked=roomOn(id,pid);cb.title='Room required';cb.onchange=()=>setRoom(id,pid,cb.checked);return cb;}
+function roomBox(id,rec){const cb=el('input');cb.type='checkbox';cb.checked=roomOn(id,rec);cb.title='Room required';cb.onchange=()=>setRoom(id,rec,cb.checked);return cb;}
 function roomSummaryHTML(id){const alloc=roomsReq(id),tot=roomsTotal(id);
   let s='🛏 <strong>'+alloc+'</strong> room'+(alloc===1?'':'s')+' allocated';
   if(tot!=null){const over=alloc>tot;s+=' / <strong style="'+(over?'color:#c0392b':'')+'">'+tot+'</strong> total available'+(over?' <span style="color:#c0392b">(over by '+(alloc-tot)+')</span>':(alloc<tot?' <span class="muted">('+(tot-alloc)+' free)</span>':''));}
@@ -367,6 +383,7 @@ async function loadAttendees(id){
     S.attendees[id]=S.demo?demoAttendees(id):[];
   }
   S.loadingAttendees=false;
+  migrateRooms(id); // now that live delegates are known, convert any of their old room keys
   return S.attendees[id];
 }
 function recordSeen(id,list){
@@ -441,7 +458,7 @@ function renderEvents(){
 // ---------- selection + panel head ----------
 async function selectEvent(id){
   S.selected=id; renderEvents();
-  pruneRooms(id); // drop room ticks left behind by removed people
+  migrateRooms(id); // person-key rooms + drop ticks left by removed people
   const e=S.events.find(x=>x.id===id);
   $('#evtName').textContent=e.name;
   $('#evtMeta').innerHTML=`<span class="pill" style="border-color:${BRAND_COLORS[e.brand]};color:${BRAND_COLORS[e.brand]}">${e.brand}</span> &nbsp;${fmtDate(e.date)}`;
@@ -531,7 +548,7 @@ function renderDelegates(box){
     {label:'Type',key:'type'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'First name',key:'firstname'},{label:'Last name',key:'lastname'},
     {label:'Email',key:'email'},{label:'Company',key:'company'},{label:'Job title',key:'jobtitle'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Notes',get:r=>delNote(id,r.id)}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Notes',get:r=>delNote(id,r.id)}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload from HubSpot';
   rf.onclick=async()=>{delete S.attendees[id];await loadAttendees(id);updateTabCounts();renderDelegates(box);};
   tb.append(si,sortSelect(delSort,v=>{delSort=v;renderDelegates(box);}),rc,ex,rf);
@@ -551,9 +568,9 @@ function renderDelegates(box){
       <td>${a.email?`<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>`:'<span class=muted>—</span>'}</td>
       <td>${esc(a.dietary)||'<span class=muted>—</span>'}</td>
       <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td class="roomCell" style="text-align:center"></td><td class="noteCell"></td><td></td>`;
-    tr.querySelector('.roomCell').appendChild(roomBox(id,a.id));
+    tr.querySelector('.roomCell').appendChild(roomBox(id,a));
     tr.querySelector('.noteCell').appendChild(cellInput(delNote(id,a.id),v=>setDelNote(id,a.id,v),'Add note…'));
-    if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{(S.store.delegates[id]||[]).forEach(y=>{if(y.id===a.id)y.deleted=true;});clearRoom(id,a.id);queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
+    if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{(S.store.delegates[id]||[]).forEach(y=>{if(y.id===a.id)y.deleted=true;});clearRoom(id,a);queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
     tbody.appendChild(tr);
   });
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
@@ -590,7 +607,7 @@ function renderSponsors(box){
       {label:'Type',get:()=>'Sponsor'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
       {label:'Sponsor',key:'sponsor'},{label:'Tier',key:'tier'},
       {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},
-      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Notes',key:'note'}]));
+      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Notes',key:'note'}]));
   };
   tb.appendChild(ex);box.appendChild(tb);
   box.appendChild(roomBar(id));
@@ -614,9 +631,9 @@ function renderSponsors(box){
       const row=el('div','addrow');row.style.cssText='flex:1 1 100%;margin-top:4px';
       const mk=(ph,key,flex)=>{const i=el('input');i.placeholder=ph;i.value=c[key]||'';i.style.flex=flex;i.oninput=()=>{c[key]=i.value;queueSave();};return i;};
       row.append(mk('Job title','jobtitle','1 1 120px'),mk('Email','email','1 1 150px'),mk('Dietary','dietary','1 1 110px'),mk('Accessibility','accessibility','1 1 110px'),mk('Notes','note','1 1 140px'));
-      const _rl=el('label');_rl.style.cssText='display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mut);white-space:nowrap';_rl.append(roomBox(id,c.id),document.createTextNode('Room'));row.appendChild(_rl);
+      const _rl=el('label');_rl.style.cssText='display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mut);white-space:nowrap';_rl.append(roomBox(id,c),document.createTextNode('Room'));row.appendChild(_rl);
       const x=el('button','btn sm ghost danger','Remove');
-      x.onclick=()=>{c.deleted=true;clearRoom(id,c.id);queueSave();updateTabCounts();renderSponsors(box);};
+      x.onclick=()=>{c.deleted=true;clearRoom(id,c);queueSave();updateTabCounts();renderSponsors(box);};
       row.appendChild(x);a.append(head,row);card.appendChild(a);
     });
     const row=el('div','addrow');
@@ -657,7 +674,7 @@ function renderSpeakers(box){
     {label:'Type',get:()=>'Speaker'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},
     {label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Session',key:'session'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Notes',key:'note'}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Notes',key:'note'}]));
   toggle.appendChild(ex);
   box.appendChild(toggle);
   if(spkMode==='single'){
@@ -716,9 +733,9 @@ function renderSpeakers(box){
     tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td class="c-ses"></td><td class="c-di"></td><td class="c-ac"></td><td class="c-room" style="text-align:center"></td><td class="c-note"></td>`;
     const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(s[key],v=>{s[key]=v;queueSave();}));};
     bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-ses','session');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','note');
-    tr.querySelector('.c-room').appendChild(roomBox(id,s.id));
+    tr.querySelector('.c-room').appendChild(roomBox(id,s));
     const td=el('td');const x=el('button','btn sm ghost','✕');
-    x.onclick=()=>{s.deleted=true;clearRoom(id,s.id);queueSave();updateTabCounts();renderSpeakers(box);};
+    x.onclick=()=>{s.deleted=true;clearRoom(id,s);queueSave();updateTabCounts();renderSpeakers(box);};
     td.appendChild(x);tr.appendChild(td);tbody.appendChild(tr);
   });
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
@@ -747,7 +764,17 @@ function buildCheckinRows(id){
   (S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).forEach(sp=>sp.contacts.filter(c=>!c.deleted).forEach(c=>rows.push({type:'Sponsor',cls:'spo',pid:c.id,scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
   (S.store.speakers[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Speaker',cls:'spk',pid:s2.id,scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
   ((S.store.staff||{})[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Staff',cls:'stf',pid:s2.id,scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company||'',email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.external?'external':'staff',build:!!s2.build,breakdown:!!s2.breakdown}));
-  return rows;
+  // De-dupe people who are in more than one of Delegate/Sponsor/Speaker — show once, Speaker wins (then Sponsor, then Delegate). Staff kept separate.
+  const prio={Speaker:1,Sponsor:2,Delegate:3};
+  const seen={}, out=[];
+  rows.forEach(r=>{
+    const e=String(r.email||'').trim().toLowerCase();
+    if(!e || !(r.type in prio)){ out.push(r); return; }
+    const ex=seen[e];
+    if(!ex){ seen[e]=r; out.push(r); }
+    else if(prio[r.type]<prio[ex.type]){ const i=out.indexOf(ex); if(i>=0)out[i]=r; seen[e]=r; }
+  });
+  return out;
 }
 function renderCheckin(box){
   box.innerHTML='';
@@ -767,7 +794,7 @@ function renderCheckin(box){
     {label:'Type',key:'type'},{label:'Scan ID',key:'scanId'},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},
     {label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},
     {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},
-    {label:'Room required',get:r=>roomOn(id,r.pid)?'Yes':''},
+    {label:'Room required',get:r=>roomOn(id,r)?'Yes':''},
     {label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},
     {label:'Notes',key:'notes'},{label:'Detail',key:'note'}]));
   tb.append(pr,ex);
@@ -789,7 +816,7 @@ function renderCheckin(box){
       <td>${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:'<span class=muted>—</span>'}</td>
       <td>${esc(r.dietary)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.accessibility)||'<span class=muted>—</span>'}</td>
-      <td style="text-align:center">${roomOn(id,r.pid)?'🛏':'<span class=muted>—</span>'}</td>
+      <td style="text-align:center">${roomOn(id,r)?'🛏':'<span class=muted>—</span>'}</td>
       <td>${esc(r.notes)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.note)||'<span class=muted>—</span>'}</td>`;
     tbody.appendChild(tr);
@@ -863,7 +890,7 @@ function renderStaff(box){
   const si=el('input','grow');si.placeholder='Search staff by name, role, email…';si.value=stfSearch;
   const rc=el('div','muted','');
   const ex=el('button','btn sm','Export attending');
-  ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Role',key:'role'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},{label:'Notes',key:'note'}]));
+  ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Role',key:'role'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},{label:'Notes',key:'note'}]));
   const exAll=el('button','btn sm','Export all staff');
   exAll.onclick=()=>download('mash-staff-roster.csv',toCSV(sortRows(S.staffRoster||[],stfSort),[{label:'Name',key:'name'},{label:'Scan ID',key:'scanId'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},{label:'Dietary',key:'dietary'},{label:'Accessibility',key:'accessibility'}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{await loadStaff(true);renderStaff(box);};
@@ -885,8 +912,8 @@ function renderStaff(box){
       const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(st[key],v=>{st[key]=v;queueSave();}));};
       bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','role');
       const chk=(sel,key)=>{const cb=el('input');cb.type='checkbox';cb.checked=!!st[key];cb.onchange=()=>{st[key]=cb.checked;queueSave();};tr.querySelector(sel).appendChild(cb);};chk('.c-build','build');chk('.c-break','breakdown');
-      tr.querySelector('.c-room').appendChild(roomBox(id,st.id));
-      const td=el('td');const x=el('button','btn sm ghost','✕');x.title='Remove';x.onclick=()=>{st.deleted=true;clearRoom(id,st.id);queueSave();updateTabCounts();renderAtt();refreshCount();syncChecks();};td.appendChild(x);tr.appendChild(td);atb.appendChild(tr);
+      tr.querySelector('.c-room').appendChild(roomBox(id,st));
+      const td=el('td');const x=el('button','btn sm ghost','✕');x.title='Remove';x.onclick=()=>{st.deleted=true;clearRoom(id,st);queueSave();updateTabCounts();renderAtt();refreshCount();syncChecks();};td.appendChild(x);tr.appendChild(td);atb.appendChild(tr);
     });
     at.appendChild(atb);aw.appendChild(at);attWrap.appendChild(aw);
   }
@@ -903,7 +930,7 @@ function renderStaff(box){
     const cb=el('input');cb.type='checkbox';cb.dataset.rid=pn.id;cb.checked=set0.has(pn.id);
     cb.onchange=()=>{
       if(cb.checked){list.push({id:uid(),rosterId:pn.id,external:false,scanId:pn.scanId,name:pn.name,firstname:pn.firstname,lastname:pn.lastname,email:pn.email,jobtitle:pn.jobtitle,company:pn.company||'Mash Media',dietary:pn.dietary||'',accessibility:pn.accessibility||'',note:'',addedAt:new Date().toISOString()});}
-      else{list.forEach(x=>{if(x.rosterId===pn.id&&!x.deleted){x.deleted=true;clearRoom(S.selected,x.id);}});}
+      else{list.forEach(x=>{if(x.rosterId===pn.id&&!x.deleted){x.deleted=true;clearRoom(S.selected,x);}});}
       queueSave();updateTabCounts();renderAtt();refreshCount();
     };
     const ctd=el('td');ctd.appendChild(cb);tr.appendChild(ctd);
