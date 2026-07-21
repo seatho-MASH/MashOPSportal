@@ -326,7 +326,7 @@ async function autoSync(){
 function clearsave(){if(saveTimer)clearTimeout(saveTimer);}
 
 /* ---------- room allocation ---------- */
-const CAL_API='https://mash-team-portal.netlify.app'; // calendar feed → room totals
+const CAL_API='https://mashportal.netlify.app'; // calendar feed → room totals
 var ROOM_TOTALS={}; // eventId -> total rooms booked (entered on the calendar)
 function roomsMap(id){S.store.rooms??={};return (S.store.rooms[id]??={});}
 function roomOn(id,pid){return !!roomsMap(id)[pid];}
