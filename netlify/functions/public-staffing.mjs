@@ -29,14 +29,25 @@ export default async (req) => {
   const speakersAll = st.speakers || {};
   const sponsorsAll = st.sponsors || {};
   const delegatesAll = st.delegates || {};
-  const roomsReq = k => Object.keys(roomsAll[k] || {}).length;
+  // pids of people who've been removed — their room ticks must not be counted
+  const orphanSet = k => {
+    const s = new Set();
+    (delegatesAll[k] || []).forEach(d => { if (d.deleted) s.add(d.id); });
+    (sponsorsAll[k] || []).forEach(sp => (sp.contacts || []).forEach(c => { if (sp.deleted || c.deleted) s.add(c.id); }));
+    (speakersAll[k] || []).forEach(x => { if (x.deleted) s.add(x.id); });
+    (staffAll[k] || []).forEach(x => { if (x.deleted) s.add(x.id); });
+    return s;
+  };
+  const roomsReq = k => { const o = orphanSet(k); return Object.keys(roomsAll[k] || {}).filter(pid => !o.has(pid)).length; };
   // Split the allocated rooms by attendee type (live delegates aren't in the store, so unknown ids fall to Delegate).
   const roomsByType = k => {
     const by = { Delegate: 0, Sponsor: 0, Speaker: 0, Staff: 0 };
-    const staffIds = new Set((staffAll[k] || []).map(x => x.id));
-    const spkIds = new Set((speakersAll[k] || []).map(x => x.id));
-    const spoIds = new Set(); (sponsorsAll[k] || []).forEach(sp => (sp.contacts || []).forEach(c => spoIds.add(c.id)));
+    const o = orphanSet(k);
+    const staffIds = new Set((staffAll[k] || []).filter(x => !x.deleted).map(x => x.id));
+    const spkIds = new Set((speakersAll[k] || []).filter(x => !x.deleted).map(x => x.id));
+    const spoIds = new Set(); (sponsorsAll[k] || []).forEach(sp => { if (!sp.deleted) (sp.contacts || []).forEach(c => { if (!c.deleted) spoIds.add(c.id); }); });
     for (const pid of Object.keys(roomsAll[k] || {})) {
+      if (o.has(pid)) continue;
       if (staffIds.has(pid)) by.Staff++;
       else if (spkIds.has(pid)) by.Speaker++;
       else if (spoIds.has(pid)) by.Sponsor++;

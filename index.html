@@ -332,7 +332,18 @@ function roomsMap(id){S.store.rooms??={};return (S.store.rooms[id]??={});}
 function roomOn(id,pid){return !!roomsMap(id)[pid];}
 function setRoom(id,pid,on){const m=roomsMap(id);if(on)m[pid]=true;else delete m[pid];queueSave();refreshRoomBars();}
 function clearRoom(id,pid){const m=roomsMap(id);if(m[pid])delete m[pid];}
-function roomsReq(id){return Object.keys(roomsMap(id)).length;}
+// pids of people who have been removed — their room ticks must not be counted
+function orphanPids(id){
+  const s=new Set();
+  ((S.store.delegates||{})[id]||[]).forEach(d=>{ if(d.deleted)s.add(d.id); });
+  ((S.store.sponsors||{})[id]||[]).forEach(sp=>{ (sp.contacts||[]).forEach(c=>{ if(sp.deleted||c.deleted)s.add(c.id); }); });
+  ((S.store.speakers||{})[id]||[]).forEach(x=>{ if(x.deleted)s.add(x.id); });
+  ((S.store.staff||{})[id]||[]).forEach(x=>{ if(x.deleted)s.add(x.id); });
+  return s;
+}
+function roomsReq(id){ const orphan=orphanPids(id); return Object.keys(roomsMap(id)).filter(k=>!orphan.has(k)).length; }
+// permanently drop room ticks left behind by removed people, then save
+function pruneRooms(id){ if(!id)return; const m=roomsMap(id), orphan=orphanPids(id); let changed=false; Object.keys(m).forEach(k=>{ if(orphan.has(k)){ delete m[k]; changed=true; } }); if(changed)queueSave(); }
 function roomsTotal(id){return ROOM_TOTALS[id]!=null?ROOM_TOTALS[id]:null;}
 function roomBox(id,pid){const cb=el('input');cb.type='checkbox';cb.checked=roomOn(id,pid);cb.title='Room required';cb.onchange=()=>setRoom(id,pid,cb.checked);return cb;}
 function roomSummaryHTML(id){const alloc=roomsReq(id),tot=roomsTotal(id);
@@ -430,6 +441,7 @@ function renderEvents(){
 // ---------- selection + panel head ----------
 async function selectEvent(id){
   S.selected=id; renderEvents();
+  pruneRooms(id); // drop room ticks left behind by removed people
   const e=S.events.find(x=>x.id===id);
   $('#evtName').textContent=e.name;
   $('#evtMeta').innerHTML=`<span class="pill" style="border-color:${BRAND_COLORS[e.brand]};color:${BRAND_COLORS[e.brand]}">${e.brand}</span> &nbsp;${fmtDate(e.date)}`;
@@ -519,7 +531,7 @@ function renderDelegates(box){
     {label:'Type',key:'type'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'First name',key:'firstname'},{label:'Last name',key:'lastname'},
     {label:'Email',key:'email'},{label:'Company',key:'company'},{label:'Job title',key:'jobtitle'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',get:r=>delNote(id,r.id)}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Notes',get:r=>delNote(id,r.id)}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload from HubSpot';
   rf.onclick=async()=>{delete S.attendees[id];await loadAttendees(id);updateTabCounts();renderDelegates(box);};
   tb.append(si,sortSelect(delSort,v=>{delSort=v;renderDelegates(box);}),rc,ex,rf);
@@ -578,7 +590,7 @@ function renderSponsors(box){
       {label:'Type',get:()=>'Sponsor'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
       {label:'Sponsor',key:'sponsor'},{label:'Tier',key:'tier'},
       {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},
-      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
+      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Notes',key:'note'}]));
   };
   tb.appendChild(ex);box.appendChild(tb);
   box.appendChild(roomBar(id));
@@ -645,7 +657,7 @@ function renderSpeakers(box){
     {label:'Type',get:()=>'Speaker'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},
     {label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Session',key:'session'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Notes',key:'note'}]));
   toggle.appendChild(ex);
   box.appendChild(toggle);
   if(spkMode==='single'){
@@ -734,7 +746,7 @@ function buildCheckinRows(id){
   allDelegates(id).forEach(a=>rows.push({type:'Delegate',cls:'del',pid:a.id,scanId:scanOf(a),name:a.name,jobtitle:a.jobtitle,company:a.company,email:a.email,dietary:a.dietary||'',accessibility:a.accessibility||'',addedAt:a.addedAt||'',notes:delNote(id,a.id),note:a.manual?'walk-in':''}));
   (S.store.sponsors[id]||[]).filter(sp=>!sp.deleted).forEach(sp=>sp.contacts.filter(c=>!c.deleted).forEach(c=>rows.push({type:'Sponsor',cls:'spo',pid:c.id,scanId:scanOf(c),name:c.name,jobtitle:c.jobtitle,company:sp.company,email:c.email,dietary:c.dietary||'',accessibility:c.accessibility||'',addedAt:c.addedAt||'',notes:c.note||'',note:sp.tier||''})));
   (S.store.speakers[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Speaker',cls:'spk',pid:s2.id,scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company,email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.session||''}));
-  ((S.store.staff||{})[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Staff',cls:'stf',pid:s2.id,scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company||'',email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.external?'external':'staff'}));
+  ((S.store.staff||{})[id]||[]).filter(s2=>!s2.deleted).forEach(s2=>rows.push({type:'Staff',cls:'stf',pid:s2.id,scanId:scanOf(s2),name:s2.name,jobtitle:s2.jobtitle,company:s2.company||'',email:s2.email,dietary:s2.dietary||'',accessibility:s2.accessibility||'',addedAt:s2.addedAt||'',notes:s2.note||'',note:s2.external?'external':'staff',build:!!s2.build,breakdown:!!s2.breakdown}));
   return rows;
 }
 function renderCheckin(box){
@@ -756,6 +768,7 @@ function renderCheckin(box){
     {label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},
     {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},
     {label:'Room required',get:r=>roomOn(id,r.pid)?'Yes':''},
+    {label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},
     {label:'Notes',key:'notes'},{label:'Detail',key:'note'}]));
   tb.append(pr,ex);
   box.appendChild(tb);
@@ -850,7 +863,7 @@ function renderStaff(box){
   const si=el('input','grow');si.placeholder='Search staff by name, role, email…';si.value=stfSearch;
   const rc=el('div','muted','');
   const ex=el('button','btn sm','Export attending');
-  ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Notes',key:'note'}]));
+  ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Role',key:'role'},{label:'Room required',get:r=>roomOn(id,r.id)?'Yes':''},{label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},{label:'Notes',key:'note'}]));
   const exAll=el('button','btn sm','Export all staff');
   exAll.onclick=()=>download('mash-staff-roster.csv',toCSV(sortRows(S.staffRoster||[],stfSort),[{label:'Name',key:'name'},{label:'Scan ID',key:'scanId'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},{label:'Dietary',key:'dietary'},{label:'Accessibility',key:'accessibility'}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{await loadStaff(true);renderStaff(box);};
