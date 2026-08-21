@@ -1,4 +1,4 @@
-import { EVENTS, eventById } from './_shows.mjs';
+import { loadEvents, loadEventById } from './_shows.mjs';
 
 const TOKEN =
   process.env.HUBSPOT_TOKEN ||
@@ -102,14 +102,17 @@ export default async (req) => {
   const eventId = url.searchParams.get('event');
 
   try {
+    // Effective list = bundled defaults + any JI overrides saved from the Admin tab.
+    const events = await loadEvents();
+
     if (eventId) {
-      const ev = eventById(eventId);
+      const ev = await loadEventById(eventId);
       if (!ev) return json({ error: `Unknown event: ${eventId}` }, 404);
       const attendees = await fetchAttendees(ev.ji);
       return json({ event: ev, total: attendees.length, attendees, updatedAt: new Date().toISOString() });
     }
     const results = [];
-    const queue = [...EVENTS];
+    const queue = [...events];
     async function worker() {
       while (queue.length) {
         const ev = queue.shift();
@@ -118,7 +121,7 @@ export default async (req) => {
       }
     }
     await Promise.all([worker(), worker(), worker(), worker()]);
-    return json({ events: EVENTS, counts: Object.fromEntries(results.map(r => [r.id, r.count])), updatedAt: new Date().toISOString() });
+    return json({ events, counts: Object.fromEntries(results.map(r => [r.id, r.count])), updatedAt: new Date().toISOString() });
   } catch (err) {
     return json({ error: String(err.message || err) }, 502);
   }

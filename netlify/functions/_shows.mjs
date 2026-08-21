@@ -28,3 +28,42 @@ export const EVENTS = [
 
 export const BRANDS = ['CN', 'EN', 'AAA', 'PAS', 'CONFEX'];
 export const eventById = (id) => EVENTS.find(e => e.id === id);
+
+// ---------------------------------------------------------------------------
+// Joining Instructions overrides
+//
+// The list above is the bundled default. Ops can repoint any event's JI value
+// from the portal's Admin tab without a code change; those overrides live in
+// Blobs under their own key (NOT in portal-state-v1, whose writes replace the
+// whole object and would clobber them).
+//
+// Use loadEvents() anywhere the *effective* JI value matters. EVENTS stays the
+// static default so nothing breaks if Blobs is unavailable.
+// ---------------------------------------------------------------------------
+import { getStore } from '@netlify/blobs';
+
+export const STORE_NAME = 'mash-attendee-portal';
+export const CFG_KEY = 'event-config-v1';
+
+export async function readEventConfig() {
+  try {
+    const store = getStore(STORE_NAME);
+    const cfg = await store.get(CFG_KEY, { type: 'json' });
+    return cfg && typeof cfg === 'object'
+      ? { ji: cfg.ji || {}, updatedAt: cfg.updatedAt || null }
+      : { ji: {}, updatedAt: null };
+  } catch {
+    return { ji: {}, updatedAt: null };   // Blobs unavailable -> fall back to defaults
+  }
+}
+
+// The bundled list with any saved JI overrides applied.
+export async function loadEvents() {
+  const { ji } = await readEventConfig();
+  if (!ji || !Object.keys(ji).length) return EVENTS;
+  return EVENTS.map(e => (ji[e.id] ? { ...e, ji: ji[e.id] } : e));
+}
+
+export async function loadEventById(id) {
+  return (await loadEvents()).find(e => e.id === id);
+}
