@@ -11,6 +11,7 @@ export const EVENTS = [
   { id: 'en-lc-trade',      brand: 'EN',     name: 'Launch Club – Trade Shows',                short: 'LC Trade',       date: '2026-08-26', ji: 'EN - LC TS - 26' },
   { id: 'en-ols',           brand: 'EN',     name: 'Operations Leaders Summit',                 short: 'OLS',            date: '2026-09-13', ji: 'EN - OLS - 26' },
   { id: 'en-lc-conferences',brand: 'EN',     name: 'Launch Club – Conferences',                short: 'LC Conferences', date: '2026-10-08', ji: 'EN - LC Conferences - 26' },
+  { id: 'en-indy-expo',     brand: 'EN',     name: 'Indy Summit',                               short: 'Indy Summit',    date: '2026-10-21', ji: 'EN - Indy Summit - 26' },
   { id: 'en-mls',           brand: 'EN',     name: 'Marketing Leaders Summit',                  short: 'MLS',            date: '2027-01-14', ji: 'EN - MLS - 27' },
   { id: 'en-sls',           brand: 'EN',     name: 'Sales Leaders Summit',                      short: 'SLS',            date: '2027-01-14', ji: 'EN - SLS - 27' },
   { id: 'en-lc-awards',     brand: 'EN',     name: 'Launch Club – Awards',                     short: 'LC Awards',      date: '2027-01-28', ji: 'EN - LC Awards - 27' },
