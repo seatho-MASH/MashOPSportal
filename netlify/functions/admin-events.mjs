@@ -1,14 +1,19 @@
 import { getStore } from '@netlify/blobs';
-import { EVENTS, CFG_KEY, STORE_NAME, readEventConfig } from './_shows.mjs';
+import { EVENTS, CFG_KEY, STORE_NAME, readEventConfig, loadEvents } from './_shows.mjs';
+import { appendAudit, whoFrom } from './_audit.mjs';
 
-// Admin: change which HubSpot "Joining Instructions" value feeds each event's delegate list.
+// Admin: which HubSpot "Joining Instructions" value feeds each event — and which
+// calendar events are in Ops at all.
 //
 // GET  /api/admin-events                  -> { events:[...], options:[{label,value}]|null, optionsError }
-// POST { action:'set',   eventId, ji }    -> save an override
-// POST { action:'reset', eventId }        -> drop the override, back to the bundled default
+//        events: every Ops event, plus upcoming calendar events not yet in Ops (inOps:false)
+// POST { action:'set',   eventId, ji }    -> bundled event: save an override
+//                                            calendar event: add it to Ops with this JI value
+// POST { action:'reset', eventId }        -> bundled event: back to the bundled default
+//                                            added event:   take it out of Ops (its data is kept)
 // POST { action:'check', ji }             -> { total } contacts currently matching that value
 //
-// Overrides live in their own Blobs key so /api/store's whole-object writes can't clobber them.
+// Settings live in their own Blobs key so /api/store's whole-object writes can't clobber them.
 
 const TOKEN =
   process.env.HUBSPOT_TOKEN ||
@@ -74,19 +79,21 @@ export default async (req) => {
 
   if (req.method === 'GET') {
     const cfg = await readEventConfig();
-    const ov = cfg.ji || {};
-
     let options = null, optionsError = null;
     try { options = await jiOptions(); }
     catch (e) { optionsError = String(e.message || e); }
 
-    const events = EVENTS.map(e => ({
-      id: e.id, brand: e.brand, name: e.name, short: e.short, date: e.date,
-      ji: ov[e.id] || e.ji,
-      jiDefault: e.ji,
-      overridden: !!ov[e.id] && ov[e.id] !== e.ji,
-    }));
-
+    const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const events = (await loadEvents({ includeCalendarOnly: true }))
+      .filter(e => e.ji || (e.date || '') >= since)          // not-yet-added: upcoming only
+      .map(e => ({
+        id: e.id, calId: e.calId, brand: e.brand, name: e.name, short: e.short, date: e.date,
+        venue: e.venue, cancelled: e.cancelled, source: e.source,
+        ji: e.ji, jiDefault: e.jiDefault,
+        bundled: !e.added && !!e.jiDefault,
+        inOps: !!e.ji,
+        overridden: !!e.jiDefault && !!cfg.ji[e.id] && cfg.ji[e.id] !== e.jiDefault,
+      }));
     return json({ events, options, optionsError, updatedAt: cfg.updatedAt || null });
   }
 
@@ -94,6 +101,7 @@ export default async (req) => {
 
   let b;
   try { b = await req.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
+  const by = whoFrom(req);
 
   try {
     if (b.action === 'check') {
@@ -102,36 +110,36 @@ export default async (req) => {
       return json({ ji, total: await countFor(ji) });
     }
 
-    if (b.action === 'set') {
-      const eventId = String(b.eventId || '').trim();
-      const ji = String(b.ji || '').trim();
-      if (!eventId) return json({ error: 'eventId is required' }, 400);
-      if (!ji) return json({ error: 'ji is required' }, 400);
-      const base = EVENTS.find(e => e.id === eventId);
-      if (!base) return json({ error: `Unknown event: ${eventId}` }, 404);
+    const eventId = String(b.eventId || '').trim();
+    if (!eventId) return json({ error: 'eventId is required' }, 400);
+    const bundled = EVENTS.find(e => e.id === eventId);
+    const known = bundled || (await loadEvents({ includeCalendarOnly: true })).find(e => e.id === eventId);
+    if (!known) return json({ error: `Unknown event: ${eventId} (not bundled, not on the calendar)` }, 404);
+    const cfg = await readEventConfig();
+    cfg.ji = cfg.ji || {};
+    const before = cfg.ji[eventId] || (bundled ? bundled.ji : '');
 
-      const cfg = await readEventConfig();
-      cfg.ji = cfg.ji || {};
-      if (ji === base.ji) delete cfg.ji[eventId];   // same as default -> no override needed
+    if (b.action === 'set') {
+      const ji = String(b.ji || '').trim();
+      if (!ji) return json({ error: 'ji is required' }, 400);
+      if (bundled && ji === bundled.ji) delete cfg.ji[eventId];   // same as default -> no override needed
       else cfg.ji[eventId] = ji;
       await writeEventConfig(cfg);
-
+      await appendAudit(eventId, [before
+        ? { by, area: 'Admin', action: 'changed', item: 'Joining Instructions value', field: 'ji', from: before, to: ji }
+        : { by, area: 'Admin', action: 'added', item: 'Event added to Ops (JI: ' + ji + ')' }]);
       let total = null;
       try { total = await countFor(ji); } catch { /* count is advisory only */ }
-      return json({ ok: true, eventId, ji, overridden: ji !== base.ji, total });
+      return json({ ok: true, eventId, ji, overridden: !!bundled && ji !== bundled.ji, inOps: true, total });
     }
 
     if (b.action === 'reset') {
-      const eventId = String(b.eventId || '').trim();
-      if (!eventId) return json({ error: 'eventId is required' }, 400);
-      const base = EVENTS.find(e => e.id === eventId);
-      if (!base) return json({ error: `Unknown event: ${eventId}` }, 404);
-
-      const cfg = await readEventConfig();
-      cfg.ji = cfg.ji || {};
       delete cfg.ji[eventId];
       await writeEventConfig(cfg);
-      return json({ ok: true, eventId, ji: base.ji, overridden: false });
+      await appendAudit(eventId, [bundled
+        ? { by, area: 'Admin', action: 'changed', item: 'Joining Instructions value', field: 'ji', from: before, to: bundled.ji }
+        : { by, area: 'Admin', action: 'removed', item: 'Event taken out of Ops (data kept)' }]);
+      return json({ ok: true, eventId, ji: bundled ? bundled.ji : '', overridden: false, inOps: !!bundled });
     }
 
     return json({ error: 'Unknown action' }, 400);

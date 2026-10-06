@@ -1,4 +1,5 @@
 import { graphToken, eventFromSharePoint } from './_graph.mjs';
+import { loadEventById } from './_shows.mjs';
 import { STATIONS } from './stations.mjs';
 
 function json(body, status = 200) {
@@ -57,7 +58,10 @@ export default async (req) => {
   let tok; try { tok = await graphToken(); } catch (e) { return json({ error: String(e.message || e) }, 500); }
 
   let venue = '';
-  try { const sp = await eventFromSharePoint(id, tok); venue = (sp && sp.location) || ''; }
+  // SharePoint is keyed by the calendar id (differs from the Ops id for a few older events).
+  let calId = id;
+  try { const meta = await loadEventById(id); if (meta) { calId = meta.calId || id; venue = meta.venue || ''; } } catch { /* fall back */ }
+  if (!venue) try { const sp = await eventFromSharePoint(calId, tok); venue = (sp && sp.location) || ''; }
   catch (e) { return json({ error: String(e.message || e) }, 502); }
   if (!venue) return json({ venue: '', station: null, options: [] });
 

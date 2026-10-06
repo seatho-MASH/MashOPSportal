@@ -73,8 +73,8 @@
     align-items:center;gap:10px;justify-content:space-between}
   .phead .pt{font-size:16px;font-weight:700}
   .phead .pm{font-size:12px;color:var(--mut)}
-  .tabs{display:flex;gap:4px;padding:10px 14px 0}
-  .tab{padding:9px 16px;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;
+  .tabs{display:flex;flex-wrap:wrap;gap:4px;padding:10px 14px 0}
+  .tab{white-space:nowrap;padding:9px 13px;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;
     border-radius:9px 9px 0 0;border:1px solid transparent;border-bottom:none}
   .tab.on{color:var(--txt);background:var(--card);border-color:var(--line)}
   .tab .b{display:inline-block;margin-left:7px;font-size:11px;background:var(--bg);border:1px solid var(--line2);
@@ -121,7 +121,7 @@
   .ccard .chint{font-size:12px;color:var(--mut);margin-bottom:10px}
   .ccard th{background:var(--card);position:static}
   .ccard td,.ccard th{padding:6px 8px;vertical-align:middle}
-  .ccard .r{text-align:right}
+  .ccard .r,td.r,th.r{text-align:right}
   .cmetric{display:flex;gap:12px;flex-wrap:wrap}
   .cbig{flex:1 1 130px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
   .cbig .n{font-size:30px;font-weight:800;line-height:1.05}
@@ -207,7 +207,9 @@
         <div class="tab" data-tab="speakers">Speakers<span class="b" id="tabCountSpk">–</span></div>
         <div class="tab" data-tab="staff">Staff<span class="b" id="tabCountStf">–</span></div>
         <div class="tab" data-tab="checkin">All Attendee Data<span class="b" id="tabCountChk">–</span></div>
-        <div class="tab" data-tab="admin" title="Change which HubSpot Joining Instructions value feeds each event">⚙ Admin</div>
+        <div class="tab" data-tab="history" title="Who changed what on this event">History</div>
+        <div class="tab" data-tab="overview" title="Community cover across every event">Overview</div>
+        <div class="tab" data-tab="admin" title="Which calendar events are in Ops, and the HubSpot Joining Instructions value for each">⚙ Admin</div>
       </div>
       <div class="body" id="tabBody"></div>
     </section>
@@ -240,8 +242,11 @@ const FALLBACK_EVENTS = [
   {id:'pas-dc-hnwi',brand:'PAS',name:'Diners Club – HNWI',short:'DC HNWI',date:'2027-01-14'},
   {id:'cfx-gets',brand:'CONFEX',name:'GETS',short:'GETS',date:'2026-07-09'},
 ];
-const BRAND_COLORS={CN:'var(--cn)',EN:'var(--en)',AAA:'var(--aaa)',PAS:'var(--pas)',CONFEX:'var(--confex)'};
-const BRAND_ORDER=['CN','EN','AAA','PAS','CONFEX'];
+const BRAND_COLORS={CN:'var(--cn)',EN:'var(--en)',AAA:'var(--aaa)',PAS:'var(--pas)',CONFEX:'var(--confex)',CN100:'var(--cn)',EN100:'var(--en)',AAA100:'var(--aaa)'};
+const BASE_BRANDS=['CN','EN','AAA','PAS','CONFEX'];
+// Brands follow the event list (events added from the calendar can bring new portfolios).
+function brandOrder(){const have=new Set(S.events.map(e=>e.brand));return BASE_BRANDS.concat([...have].filter(b=>!BASE_BRANDS.includes(b)).sort());}
+function brandColor(b){return BRAND_COLORS[b]||'var(--dim)';}
 
 // ---------- state ----------
 const S={
@@ -287,6 +292,9 @@ function sortSelect(cur,cb){const sel=el('select');sel.innerHTML='<option value=
 
 // ---------- API ----------
 async function api(path,opts){
+  opts=opts||{};
+  const u=window.PORTAL_USER;   // set by auth.js — recorded against saves on the History tab
+  if(u&&u.email)opts.headers=Object.assign({},opts.headers||{},{'x-portal-user':u.email});
   const r=await fetch(path,opts);
   if(!r.ok)throw new Error('HTTP '+r.status);
   return r.json();
@@ -384,7 +392,8 @@ function migrateRooms(id){ if(!id)return; const m=roomsMap(id), p=eventPeople(id
   });
   if(changed)queueSave();
 }
-function roomsTotal(id){return ROOM_TOTALS[id]!=null?ROOM_TOTALS[id]:null;}
+function calIdOf(id){return ((S.events||[]).find(e=>e.id===id)||{}).calId||id;}
+function roomsTotal(id){const k=ROOM_TOTALS[id]!=null?id:calIdOf(id);return ROOM_TOTALS[k]!=null?ROOM_TOTALS[k]:null;}
 function roomBox(id,rec){const cb=el('input');cb.type='checkbox';cb.checked=roomOn(id,rec);cb.title='Room required';cb.onchange=()=>setRoom(id,rec,cb.checked);return cb;}
 function roomSummaryHTML(id){const alloc=roomsReq(id),tot=roomsTotal(id);
   let s='🛏 <strong>'+alloc+'</strong> room'+(alloc===1?'':'s')+' allocated';
@@ -442,10 +451,10 @@ function setStatus(ok,txt){
 // ---------- sidebar ----------
 function renderBrandChips(){
   const box=$('#brandChips'); box.innerHTML='';
-  BRAND_ORDER.forEach(b=>{
+  brandOrder().forEach(b=>{
     const on=S.brandFilter.has(b);
     const c=el('span','chip'+(on?' on':''),b);
-    if(on)c.style.background=BRAND_COLORS[b];
+    if(on)c.style.background=brandColor(b);
     c.onclick=()=>{on?S.brandFilter.delete(b):S.brandFilter.add(b);renderEvents();renderBrandChips();};
     box.appendChild(c);
   });
@@ -462,16 +471,16 @@ function renderEvents(){
   const list=$('#eventList'); list.innerHTML='';
   const evs=visibleEvents();
   if(!evs.length){list.appendChild(el('div','empty','No events match.'));return;}
-  BRAND_ORDER.forEach(b=>{
+  brandOrder().forEach(b=>{
     const group=evs.filter(e=>e.brand===b);
     if(!group.length)return;
     list.appendChild(el('div','grouphdr',b));
     group.sort((a,c)=>a.date.localeCompare(c.date)).forEach(e=>{
       const row=el('div','evt'+(S.selected===e.id?' sel':''));
-      const bar=el('div','bar');bar.style.background=BRAND_COLORS[b];
+      const bar=el('div','bar');bar.style.background=brandColor(b);
       const cnt=S.counts[e.id]; const ct=el('div','ct',cnt==null?'–':cnt);
       row.appendChild(bar);
-      row.appendChild(el('div','en',`<div class="nm">${esc(e.short||e.name)}</div><div class="dt">${fmtDate(e.date)}</div>`));
+      row.appendChild(el('div','en',`<div class="nm">${esc(e.short||e.name)}</div><div class="dt">${fmtDate(e.date)}${e.cancelled?' · <span style="color:var(--bad)">cancelled</span>':''}</div>`));
       row.appendChild(ct);
       row.onclick=()=>selectEvent(e.id);
       list.appendChild(row);
@@ -485,7 +494,7 @@ async function selectEvent(id){
   migrateRooms(id); // person-key rooms + drop ticks left by removed people
   const e=S.events.find(x=>x.id===id);
   $('#evtName').textContent=e.name;
-  $('#evtMeta').innerHTML=`<span class="pill" style="border-color:${BRAND_COLORS[e.brand]};color:${BRAND_COLORS[e.brand]}">${e.brand}</span> &nbsp;${fmtDate(e.date)}`;
+  $('#evtMeta').innerHTML=`<span class="pill" style="border-color:${brandColor(e.brand)};color:${brandColor(e.brand)}">${esc(e.brand)}</span> &nbsp;${fmtDate(e.date)}${e.end&&e.end!==e.date?' – '+fmtDate(e.end):''}${e.venue?' · '+esc(e.venue):''}${e.cancelled?' · <span style="color:var(--bad)">Cancelled on the calendar</span>':''}`;
   updateTabCounts();
   renderBody();
   if(S.tab==='delegates'){ await loadAttendees(id); updateTabCounts(); renderBody(); }
@@ -522,12 +531,14 @@ function download(name,text){
 function renderBody(){
   const box=$('#tabBody'); box.innerHTML='';
   if(S.tab==='admin'){renderAdmin(box);return;}   // admin covers all events, no selection needed
+  if(S.tab==='overview'){renderOverview(box);return;}
   if(!S.selected){box.appendChild(el('div','empty','<div class="big">No event selected</div>Choose an event from the list to get started.'));return;}
   if(S.tab==='delegates')renderDelegates(box);
   else if(S.tab==='sponsors')renderSponsors(box);
   else if(S.tab==='speakers')renderSpeakers(box);
   else if(S.tab==='staff')renderStaff(box);
   else if(S.tab==='community')renderCommunity(box);
+  else if(S.tab==='history')renderHistory(box);
   else renderCheckin(box);
 }
 
@@ -973,7 +984,8 @@ function renderStaff(box){
 }
 
 // ----- ADMIN -----
-// Repoint an event at a different HubSpot "Joining Instructions" value without a code change.
+// Which calendar events are in Ops, and which HubSpot "Joining Instructions" value
+// feeds each one. Names/dates/venues come from the calendar; nothing here needs a deploy.
 let adminData=null,adminLoading=false,adminError='';
 async function loadAdmin(force){
   if(force){adminData=null;adminError='';}
@@ -984,9 +996,14 @@ async function loadAdmin(force){
   adminLoading=false;
   return adminData;
 }
+async function adminChanged(box){
+  S.attendees={};await loadAdmin(true);await loadSummary();renderBrandChips();renderEvents();
+  if(S.selected&&!S.events.some(e=>e.id===S.selected)){S.selected=null;$('#evtName').textContent='Select an event';}
+  if(S.tab==='admin')renderAdmin(box);
+}
 function renderAdmin(box){
   box.innerHTML='';
-  box.appendChild(el('div','banner','<strong>Joining Instructions mapping.</strong> A delegate shows up under an event when their HubSpot <em>Joining Instructions</em> field contains that event\'s value. Change it here and the delegate list repoints straight away — no deploy needed.'));
+  box.appendChild(el('div','banner','<strong>Events &amp; Joining Instructions.</strong> Event names, dates and venues come from the calendar. An event is in Ops once it has a HubSpot <em>Joining Instructions</em> value — a delegate shows under it when their Joining Instructions contain that value. To add a new event, give it a value in the second table. No deploy needed.'));
 
   if(S.demo){box.appendChild(el('div','empty','<div class="big">Preview mode</div>The backend isn\'t connected, so there\'s nothing to configure.'));return;}
 
@@ -1007,88 +1024,163 @@ function renderAdmin(box){
     w.innerHTML='<strong>Dropdown unavailable — using free text.</strong> '+esc(optErr)+' Values below must match HubSpot exactly, so use <em>Check</em> before relying on one.';
     box.appendChild(w);
   }
-
+  const inOps=events.filter(e=>e.inOps),notIn=events.filter(e=>!e.inOps);
   const tb=el('div','toolbar');
-  const note=el('div','muted','');
-  const rf=el('button','btn sm ghost','↻');rf.title='Reload from HubSpot';
+  const overN=inOps.filter(e=>e.overridden).length,addN=inOps.filter(e=>!e.bundled).length;
+  tb.appendChild(el('div','muted',inOps.length+' events in Ops'+(addN?(' · '+addN+' added here'):'')+(overN?(' · '+overN+' with a changed value'):'')+' · '+notIn.length+' upcoming on the calendar not in Ops'));
+  const rf=el('button','btn sm ghost','↻');rf.title='Reload from HubSpot and the calendar';
   rf.onclick=async()=>{await loadAdmin(true);if(S.tab==='admin')renderAdmin(box);};
-  tb.append(note,rf);box.appendChild(tb);
-  const overN=events.filter(e=>e.overridden).length;
-  note.textContent=events.length+' events'+(overN?(' · '+overN+' changed from the bundled default'):' · all on bundled defaults');
+  tb.appendChild(rf);box.appendChild(tb);
 
+  function table(list,title,emptyMsg){
+    box.appendChild(el('div',null,'<div style="font-weight:700;margin:14px 0 8px">'+title+'</div>'));
+    if(!list.length){box.appendChild(el('div','muted',emptyMsg));return;}
+    const wrap=el('div','tablewrap');wrap.style.maxHeight='none';const t=el('table');
+    t.innerHTML='<thead><tr><th>Event</th><th>Joining Instructions value</th><th style="width:140px">Delegates</th><th style="width:240px"></th></tr></thead>';
+    const tbody=el('tbody');
+    list.forEach(ev=>{
+      const tr=el('tr');
+      const meta=[fmtDate(ev.date),ev.venue?esc(ev.venue):'',ev.source==='bundled'?'<span style="color:var(--warn)">not found on the calendar</span>':''].filter(Boolean).join(' · ');
+      tr.innerHTML='<td><strong>'+esc(ev.short||ev.name)+'</strong> <span class="pill" style="border-color:'+brandColor(ev.brand)+';color:'+brandColor(ev.brand)+'">'+esc(ev.brand)+'</span>'
+        +(ev.cancelled?' <span class="pill" style="color:var(--bad)">Cancelled</span>':'')
+        +'<div class="muted">'+esc(ev.name)+'</div><div class="muted" style="font-size:11.5px">'+meta+'</div></td><td class="c-ji"></td><td class="c-cnt muted">—</td><td class="c-act"></td>';
+      const jiCell=tr.querySelector('.c-ji'),cntCell=tr.querySelector('.c-cnt'),actCell=tr.querySelector('.c-act');
+      let input;
+      if(options&&options.length){
+        input=el('select');
+        const vals=options.map(o=>o.value);
+        if(!ev.inOps){const op=el('option');op.value='';op.textContent='— choose a value —';input.appendChild(op);}
+        options.forEach(o=>{const op=el('option');op.value=o.value;op.textContent=o.label===o.value?o.label:(o.label+'  ('+o.value+')');input.appendChild(op);});
+        if(ev.ji&&!vals.includes(ev.ji)){const op=el('option');op.value=ev.ji;op.textContent=ev.ji+'  (current — not in HubSpot list)';input.insertBefore(op,input.firstChild);}
+        input.value=ev.ji||'';
+      }else{input=el('input','cellinput');input.value=ev.ji||'';input.placeholder='Joining Instructions value';}
+      input.style.minWidth='260px';jiCell.appendChild(input);
+      if(ev.bundled){const def=el('div','muted');def.style.marginTop='4px';def.innerHTML=ev.overridden?('Bundled default: <code>'+esc(ev.jiDefault)+'</code>'):'Bundled default';jiCell.appendChild(def);}
+      else if(ev.inOps){const def=el('div','muted');def.style.marginTop='4px';def.textContent='Added from the calendar';jiCell.appendChild(def);}
+      const setCount=n=>{cntCell.innerHTML=n==null?'—':('<strong>'+n+'</strong> matching');cntCell.className='c-cnt'+(n?'':' muted');};
+      const btn=(label,cls)=>{const b=el('button','btn sm '+(cls||''),label);b.style.marginRight='6px';actCell.appendChild(b);return b;};
+      const post=async(body,b,busy)=>{b.disabled=true;cntCell.textContent=busy;try{return await api('/api/admin-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});}catch(e){cntCell.textContent='Failed: '+(e.message||e);return null;}finally{b.disabled=false;}};
+      const chk=btn('Check');
+      chk.onclick=async()=>{const v=String(input.value||'').trim();if(!v){cntCell.textContent='Pick a value first';return;}const r=await post({action:'check',ji:v},chk,'Checking…');if(r)setCount(r.total);};
+      const save=btn(ev.inOps?'Save':'Add to Ops','primary');
+      save.onclick=async()=>{const v=String(input.value||'').trim();if(!v){cntCell.textContent='Pick a value first';return;}
+        const r=await post({action:'set',eventId:ev.id,ji:v},save,'Saving…');if(r){setCount(r.total);await adminChanged(box);}};
+      if(ev.overridden||(ev.inOps&&!ev.bundled)){
+        const rs=btn(ev.bundled?'Reset':'Remove from Ops','ghost'+(ev.bundled?'':' danger'));
+        rs.title=ev.bundled?'Back to the value bundled in the code':'Hide this event in Ops. Anything already entered for it is kept and comes back if you add it again.';
+        rs.onclick=async()=>{if(!ev.bundled&&!confirm('Take "'+(ev.short||ev.name)+'" out of Ops? Its sponsors, staff and notes are kept.'))return;
+          const r=await post({action:'reset',eventId:ev.id},rs,'Saving…');if(r)await adminChanged(box);};
+      }
+      tbody.appendChild(tr);
+    });
+    t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
+  }
+  table(inOps,'In Ops','No events yet.');
+  table(notIn,'On the calendar, not in Ops yet','Every upcoming calendar event is already in Ops.');
+}
+
+// ----- HISTORY (change log) -----
+const HIST={};   // eventId -> {at, entries, error}
+async function loadHistory(id,force){
+  const h=HIST[id];
+  if(h&&!force&&Date.now()-h.at<30000)return h;
+  try{const d=await api('/api/audit?event='+encodeURIComponent(id));HIST[id]={at:Date.now(),entries:d.entries||[]};}
+  catch(e){HIST[id]={at:Date.now(),entries:(h&&h.entries)||null,error:String(e.message||e)};}
+  return HIST[id];
+}
+let histSearch='',histArea='';
+function histText(x){
+  const q=v=>'<span class="muted">“</span>'+esc(v===''||v==null?'(blank)':v)+'<span class="muted">”</span>';
+  if(x.action==='added')return 'Added <strong>'+esc(x.item)+'</strong>'+(x.field==='restored'?' (restored)':'');
+  if(x.action==='removed')return 'Removed <strong>'+esc(x.item)+'</strong>';
+  if(x.field==='rooms')return 'Rooms allocated '+esc(x.from)+' → <strong>'+esc(x.to)+'</strong>';
+  return '<strong>'+esc(x.item)+'</strong> · '+esc(x.field||'')+': '+q(x.from)+' → '+q(x.to);
+}
+function renderHistory(box){
+  box.innerHTML='';
+  const id=S.selected,h=HIST[id];
+  if(!h||Date.now()-h.at>30000){
+    if(!h)box.appendChild(el('div','empty','<span class="spinner"></span> Loading history…'));
+    loadHistory(id).then(()=>{if(S.tab==='history'&&S.selected===id&&!isEditing())renderHistory(box);});
+    if(!h)return;
+  }
+  if(!h.entries){box.appendChild(el('div','empty','<div class="big">Couldn\'t load the history</div>'+esc(h.error||'')));return;}
+  box.appendChild(el('div','banner','Every change saved for this event — who, when and what. Logging started on '+esc(fmtDate('2026-10-06'))+'; nothing earlier is recorded. Bursts of typing in one field show as a single change.'));
+  const tb=el('div','toolbar');
+  const si=el('input','grow');si.placeholder='Search people, sponsors, fields…';si.value=histSearch;
+  const areas=[...new Set(h.entries.map(x=>x.area))].sort();
+  const sel=el('select');sel.innerHTML='<option value="">All areas</option>'+areas.map(a=>'<option>'+esc(a)+'</option>').join('');sel.value=histArea;
+  const cnt=el('div','muted');
+  const rf=el('button','btn sm ghost','↻');rf.onclick=async()=>{await loadHistory(id,true);if(S.tab==='history')renderHistory(box);};
+  tb.append(si,sel,cnt,rf);box.appendChild(tb);
+  if(!h.entries.length){box.appendChild(el('div','empty','<div class="big">No changes recorded yet</div>Edits made from now on will show here.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th>Event</th><th>Joining Instructions value</th><th style="width:150px">Delegates</th><th style="width:210px"></th></tr></thead>';
+  t.innerHTML='<thead><tr><th style="width:150px">When</th><th style="width:200px">Who</th><th style="width:150px">Area</th><th>Change</th></tr></thead>';
   const tbody=el('tbody');
-
-  events.forEach(ev=>{
-    const tr=el('tr');
-    tr.innerHTML='<td><strong>'+esc(ev.short||ev.name)+'</strong> <span class="pill" style="border-color:'+(BRAND_COLORS[ev.brand]||'')+';color:'+(BRAND_COLORS[ev.brand]||'')+'">'+esc(ev.brand)+'</span><div class="muted">'+esc(ev.name)+' · '+fmtDate(ev.date)+'</div></td><td class="c-ji"></td><td class="c-cnt muted">—</td><td class="c-act"></td>';
-    const jiCell=tr.querySelector('.c-ji'),cntCell=tr.querySelector('.c-cnt'),actCell=tr.querySelector('.c-act');
-
-    // dropdown when HubSpot gave us the option list, plain text otherwise
-    let input;
-    if(options&&options.length){
-      input=el('select');
-      const vals=options.map(o=>o.value);
-      options.forEach(o=>{const op=el('option');op.value=o.value;op.textContent=o.label===o.value?o.label:(o.label+'  ('+o.value+')');input.appendChild(op);});
-      if(ev.ji&&!vals.includes(ev.ji)){const op=el('option');op.value=ev.ji;op.textContent=ev.ji+'  (current — not in HubSpot list)';input.insertBefore(op,input.firstChild);}
-      input.value=ev.ji||'';
-    }else{
-      input=el('input','cellinput');input.value=ev.ji||'';
-    }
-    input.style.minWidth='260px';
-    jiCell.appendChild(input);
-    const def=el('div','muted');def.style.marginTop='4px';
-    const showDefault=()=>{def.innerHTML=ev.overridden?('Bundled default: <code>'+esc(ev.jiDefault)+'</code>'):'Bundled default';};
-    showDefault();jiCell.appendChild(def);
-
-    const setCount=(n)=>{cntCell.innerHTML=n==null?'—':('<strong>'+n+'</strong> matching');cntCell.className='c-cnt'+(n?'':' muted');};
-
-    const chk=el('button','btn sm','Check');
-    chk.onclick=async()=>{
-      const v=String(input.value||'').trim();if(!v)return;
-      chk.disabled=true;cntCell.textContent='Checking…';
-      try{const r=await api('/api/admin-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'check',ji:v})});setCount(r.total);}
-      catch(e){cntCell.textContent='Check failed';}
-      finally{chk.disabled=false;}
-    };
-
-    const save=el('button','btn sm primary','Save');
-    save.onclick=async()=>{
-      const v=String(input.value||'').trim();
-      if(!v){cntCell.textContent='Pick a value first';return;}
-      save.disabled=true;cntCell.textContent='Saving…';
-      try{
-        const r=await api('/api/admin-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'set',eventId:ev.id,ji:v})});
-        ev.ji=r.ji;ev.overridden=r.overridden;showDefault();setCount(r.total);
-        resetBtn.style.display=ev.overridden?'':'none';
-        note.textContent=events.length+' events · '+events.filter(x=>x.overridden).length+' changed from the bundled default';
-        S.attendees={};await loadSummary();renderEvents();
-        if(S.selected===ev.id)updateTabCounts();
-      }catch(e){cntCell.textContent='Save failed: '+(e.message||e);}
-      finally{save.disabled=false;}
-    };
-
-    const resetBtn=el('button','btn sm ghost','Reset');
-    resetBtn.title='Back to the value bundled in the code';
-    resetBtn.style.display=ev.overridden?'':'none';
-    resetBtn.onclick=async()=>{
-      resetBtn.disabled=true;cntCell.textContent='Resetting…';
-      try{
-        const r=await api('/api/admin-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'reset',eventId:ev.id})});
-        ev.ji=r.ji;ev.overridden=false;input.value=r.ji;showDefault();setCount(null);
-        resetBtn.style.display='none';
-        note.textContent=events.length+' events · '+events.filter(x=>x.overridden).length+' changed from the bundled default';
-        S.attendees={};await loadSummary();renderEvents();
-      }catch(e){cntCell.textContent='Reset failed: '+(e.message||e);}
-      finally{resetBtn.disabled=false;}
-    };
-
-    actCell.append(chk,save,resetBtn);
-    [chk,save,resetBtn].forEach(b=>b.style.marginRight='6px');
+  h.entries.forEach(x=>{
+    const tr=el('tr');tr.dataset.s=(x.by+' '+x.area+' '+x.item+' '+(x.field||'')+' '+(x.from||'')+' '+(x.to||'')).toLowerCase();tr.dataset.a=x.area;
+    const d=new Date(x.at);
+    tr.innerHTML='<td class="rid">'+esc(d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}))+'</td><td>'+esc(x.by||'unknown')+'</td><td><span class="pill">'+esc(x.area)+'</span></td><td>'+histText(x)+'</td>';
     tbody.appendChild(tr);
   });
+  t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
+  const apply=()=>{const q=si.value.toLowerCase();let n=0;[...tbody.children].forEach(tr=>{const v=(!q||tr.dataset.s.includes(q))&&(!sel.value||tr.dataset.a===sel.value);tr.style.display=v?'':'none';if(v)n++;});cnt.textContent=n+' of '+h.entries.length;histSearch=si.value;histArea=sel.value;};
+  si.oninput=apply;sel.onchange=apply;apply();
+}
 
+// ----- OVERVIEW (community cover across every event) -----
+let OVR=null,ovrLoading=false,ovrPast=false;
+async function loadOverview(force){
+  if(ovrLoading)return;if(OVR&&!force&&Date.now()-OVR.at<60000)return;
+  ovrLoading=true;
+  try{const d=await api('/api/community-summary');OVR={at:Date.now(),events:d.events||{}};}
+  catch(e){OVR={at:Date.now(),events:(OVR&&OVR.events)||{},error:String(e.message||e)};}
+  ovrLoading=false;
+}
+function renderOverview(box){
+  box.innerHTML='';
+  if(!OVR){box.appendChild(el('div','empty','<span class="spinner"></span> Working out cover for every event…'));loadOverview().then(()=>{if(S.tab==='overview')renderOverview(box);});return;}
+  if(Date.now()-OVR.at>60000)loadOverview().then(()=>{if(S.tab==='overview'&&!isEditing())renderOverview(box);});
+  const today=new Date().toISOString().slice(0,10),dayMs=86400000;
+  const days=d=>Math.round((Date.parse(d+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/dayMs);
+  const rows=S.events.filter(e=>!e.cancelled).map(e=>({e,c:OVR.events[e.id]||null,d:days(e.date)}))
+    .filter(r=>ovrPast?true:r.d>=0).sort((a,b)=>ovrPast?(b.e.date.localeCompare(a.e.date)):(a.e.date.localeCompare(b.e.date)));
+  const up=S.events.filter(e=>!e.cancelled&&days(e.date)>=0).map(e=>OVR.events[e.id]).filter(c=>c&&c.demand);
+  const shortList=up.filter(c=>c.count!=null&&c.required!=null&&c.count<c.required);
+  const gap=shortList.reduce((n,c)=>n+(c.required-c.count),0);
+  const k=el('div','cmetric');k.style.marginBottom='14px';
+  k.innerHTML='<div class="cbig"><div class="n">'+up.length+'</div><div class="l">upcoming events with sponsor meetings</div></div>'
+    +'<div class="cbig"><div class="n" style="color:'+(shortList.length?'var(--bad)':'var(--good)')+'">'+shortList.length+'</div><div class="l">short of delegates</div></div>'
+    +'<div class="cbig"><div class="n">'+gap+'</div><div class="l">delegates still needed in total</div></div>';
+  box.appendChild(k);
+  const tb=el('div','toolbar');
+  const tg=el('label');tg.style.cssText='display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mut)';
+  const cb=el('input');cb.type='checkbox';cb.checked=ovrPast;cb.onchange=()=>{ovrPast=cb.checked;renderOverview(box);};
+  tg.append(cb,document.createTextNode('Show past events (with meetings delivered)'));
+  const note=el('div','muted grow',OVR.error?('Couldn\'t refresh: '+esc(OVR.error)):'Delegates are live from HubSpot (or the override set on the Community tab). Click an event to open it.');
+  const rf=el('button','btn sm ghost','↻');rf.onclick=async()=>{await loadOverview(true);if(S.tab==='overview')renderOverview(box);};
+  tb.append(note,tg,rf);box.appendChild(tb);
+  const wrap=el('div','tablewrap');wrap.style.maxHeight='none';const t=el('table');
+  t.innerHTML='<thead><tr><th>Event</th><th>Date</th><th class="r">Days</th><th class="r">Sponsors</th><th class="r">Meetings</th><th class="r">Needed</th><th class="r">Available</th><th>Cover</th><th class="r">Delivered</th></tr></thead>';
+  const tbody=el('tbody');
+  if(!rows.length)tbody.appendChild(el('tr',null,'<td colspan="9" class="muted">No events.</td>'));
+  rows.forEach(({e,c,d})=>{
+    const tr=el('tr');tr.style.cursor='pointer';
+    let cover='<span class="muted">Not planned</span>';
+    if(c&&c.demand){
+      if(c.required==null)cover='<span style="color:var(--warn)">Set slots</span>';
+      else if(c.count==null)cover='<span class="muted">No count</span>';
+      else if(c.count>=c.required)cover='<span style="color:var(--good);font-weight:600">✓ Covered</span>'+(c.count>c.required?' <span class="muted">+'+(c.count-c.required)+'</span>':'');
+      else cover='<span style="color:var(--bad);font-weight:600">Short by '+(c.required-c.count)+'</span>';
+    }
+    const dl=(c&&c.delivered!=null&&c.demand)?(c.delivered+' / '+c.demand+' <span class="muted">('+Math.round(100*c.delivered/c.demand)+'%)</span>'):'<span class="muted">—</span>';
+    const n=v=>v==null?'<span class="muted">—</span>':v;
+    tr.innerHTML='<td><strong>'+esc(e.short||e.name)+'</strong> <span class="pill" style="border-color:'+brandColor(e.brand)+';color:'+brandColor(e.brand)+'">'+esc(e.brand)+'</span></td>'
+      +'<td>'+fmtDate(e.date)+'</td><td class="r">'+(d===0?'today':d)+'</td>'
+      +'<td class="r">'+n(c&&c.sponsors)+'</td><td class="r">'+n(c&&c.demand)+'</td><td class="r">'+n(c&&c.required)+'</td><td class="r">'+n(c&&c.count)+'</td><td>'+cover+'</td><td class="r">'+dl+'</td>';
+    tr.onclick=()=>{selectEvent(e.id);const tab=document.querySelector('.tab[data-tab="community"]');if(tab)tab.click();};
+    tbody.appendChild(tr);
+  });
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
 }
 
@@ -1177,7 +1269,7 @@ function renderCommunity(box){
   const e=comEv(id);
   if(comAutoAssign(id))saveCom(id);
 
-  const cal=CAL_EVENTS[id];
+  const cal=CAL_EVENTS[id]||CAL_EVENTS[calIdOf(id)];
   box.appendChild(el('div','banner','<strong>Community planner.</strong> The minimum community delegates needed to cover every sponsor\'s 1-2-1 meeting package. Sponsors are the ones on the Sponsors tab; delegates are live from HubSpot.'
     +(cal?('<div style="margin-top:4px">'+esc(fmtRange(cal.start,cal.end))+' · '+(cal.location?esc(cal.location):'venue not set on the calendar')+'</div>'):'')));
 
@@ -1230,6 +1322,49 @@ function renderCommunity(box){
   const bh=el('div','ch','By package');bh.style.marginTop='14px';bc.appendChild(bh);
   const bt=el('table');bc.appendChild(bt);R.appendChild(bc);
 
+  /* fulfilment — meetings actually held */
+  const fc=el('div','ccard');
+  fc.appendChild(el('div','ch','Meetings delivered'));
+  fc.appendChild(el('div','chint','Log how many meetings each sponsor actually got once the event has run. Leave blank until then. (Grip should be able to fill this automatically once its API is available.)'));
+  const fsum=el('div');fsum.style.cssText='margin-bottom:8px;font-size:13px';
+  const ft=el('table');ft.innerHTML='<thead><tr><th>Sponsor</th><th class="r" style="width:80px">Promised</th><th class="r" style="width:96px">Delivered</th><th class="r" style="width:60px">%</th></tr></thead>';
+  const fb=el('tbody');ft.appendChild(fb);
+  const fx=el('button','btn sm','Export CSV');fx.style.marginTop='10px';fx.title='Promised vs delivered per sponsor — for post-show sponsor reports';
+  fc.append(fsum,ft,fx);R.appendChild(fc);
+  e.delivered=e.delivered||{};
+  const pct=(d,p)=>p>0?Math.round(100*d/p)+'%':'—';
+  const logged=sp=>e.delivered[sp.id]!=null&&e.delivered[sp.id]!=='';
+  const byCo=(a,b)=>(a.company||'').localeCompare(b.company||'');
+  function fulTotals(){
+    const r=comCompute(id);let pr=0,dv=0,any=false;
+    r.sps.forEach(sp=>{pr+=r.mtg(sp);if(logged(sp)){any=true;dv+=+e.delivered[sp.id]||0;}});
+    fsum.innerHTML=any?('<strong>'+dv+'</strong> of <strong>'+pr+'</strong> promised meetings delivered ('+pct(dv,pr)+')'+(dv<pr?' · <span style="color:var(--bad)">'+(pr-dv)+' short</span>':'')):'<span class="muted">Nothing logged yet.</span>';
+  }
+  function drawFulfil(){
+    const r=comCompute(id);fb.innerHTML='';
+    if(!r.sps.length){fb.appendChild(el('tr',null,'<td colspan="4" class="muted">No sponsors yet.</td>'));fulTotals();return;}
+    [...r.sps].sort(byCo).forEach(sp=>{
+      const tr=el('tr'),p=r.mtg(sp);
+      tr.appendChild(el('td',null,esc(sp.company)));
+      tr.appendChild(el('td','r',String(p)));
+      const i=el('input','cellinput');i.type='number';i.min='0';i.style.textAlign='right';i.value=logged(sp)?e.delivered[sp.id]:'';i.style.border='1px solid var(--line2)';i.placeholder='–';
+      const pc=el('td','r',logged(sp)?pct(+e.delivered[sp.id]||0,p):'—');
+      const colour=()=>{pc.style.color=!logged(sp)?'':((+e.delivered[sp.id]||0)>=p?'var(--good)':'var(--bad)');};colour();
+      i.oninput=()=>{
+        if(i.value==='')delete e.delivered[sp.id];else e.delivered[sp.id]=Math.max(0,Math.round(+i.value||0));
+        pc.textContent=logged(sp)?pct(+e.delivered[sp.id]||0,p):'—';colour();saveCom(id);fulTotals();
+      };
+      const td=el('td','r');td.appendChild(i);tr.append(td,pc);fb.appendChild(tr);
+    });
+    fulTotals();
+  }
+  fx.onclick=()=>{
+    const r=comCompute(id);
+    const rows=[...r.sps].sort(byCo).map(sp=>{const p=r.byId[e.assign[sp.id]],m=r.mtg(sp),v=logged(sp)?(+e.delivered[sp.id]||0):null;
+      return {company:sp.company,pkg:p?p.name:'',promised:m,delivered:v==null?'':v,pct:v==null?'':pct(v,m),short:v==null?'':Math.max(0,m-v)};});
+    download(id+'-sponsor-meetings.csv',toCSV(rows,[{label:'Sponsor',key:'company'},{label:'Package',key:'pkg'},{label:'Meetings promised',key:'promised'},{label:'Meetings delivered',key:'delivered'},{label:'% delivered',key:'pct'},{label:'Shortfall',key:'short'}]));
+  };
+
   function drawPkgs(){
     pb.innerHTML='';
     if(!e.packages.length)pb.appendChild(el('tr',null,'<td colspan="3" class="muted">No packages yet.</td>'));
@@ -1251,6 +1386,7 @@ function renderCommunity(box){
   }
   function drawPkgOpts(){const v=sp2.value;sp2.innerHTML='<option value="">— package —</option>'+e.packages.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+' ('+(+p.meetings||0)+')</option>').join('');sp2.value=v;}
   function drawSponsors(){
+    drawFulfil();
     const r=comCompute(id);
     sh.innerHTML='Sponsors <span class="pill">'+r.sps.length+'</span>';
     sb.innerHTML='';
@@ -1337,7 +1473,7 @@ function applyTheme(t){document.documentElement.setAttribute('data-theme',t);try
 (async function(){
   renderBrandChips();
   await Promise.all([loadSummary(),loadStore()]);
-  renderEvents();
+  renderBrandChips();renderEvents();
   // auto-select the soonest upcoming event
   const today=new Date().toISOString().slice(0,10);
   const upcoming=[...S.events].filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0]||S.events[0];

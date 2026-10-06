@@ -1,4 +1,5 @@
 import { getStore } from '@netlify/blobs';
+import { loadEvents } from './_shows.mjs';
 
 const KEY = 'portal-state-v1';
 // Set PORTAL_ORIGIN to the calendar's URL to lock this down; defaults to open.
@@ -52,13 +53,17 @@ export default async (req) => {
     for (const key of Object.keys(roomsAll[k] || {})) { if (ctx.isOrphan(key)) continue; by[ctx.typeOf(key) || 'Delegate']++; }
     return by;
   };
-  const id = new URL(req.url).searchParams.get('event');
+  // The calendar asks with its own ids; a few Ops events are stored under older ids.
+  let evs = [];
+  try { evs = await loadEvents(); } catch { /* aliases are best-effort */ }
+  const asked = new URL(req.url).searchParams.get('event');
+  const id = asked ? ((evs.find(e => e.id === asked) || evs.find(e => e.calId === asked) || {}).id || asked) : null;
 
   if (id) {
     const staff = (staffAll[id] || [])
       .filter(x => !x.deleted)
       .map(x => ({ name: x.name, jobtitle: x.jobtitle || '', external: !!x.external }));
-    return json({ event: id, staff, onsite: onsiteAll[id] || {}, roomsRequired: roomsReq(id), roomsByType: roomsByType(id) });
+    return json({ event: asked, staff, onsite: onsiteAll[id] || {}, roomsRequired: roomsReq(id), roomsByType: roomsByType(id) });
   }
 
   // Summary for all events: count + on-site details (used to badge the calendar).
@@ -66,6 +71,7 @@ export default async (req) => {
   for (const k of new Set([...Object.keys(staffAll), ...Object.keys(onsiteAll), ...Object.keys(roomsAll)])) {
     events[k] = { count: (staffAll[k] || []).filter(x => !x.deleted).length, onsite: onsiteAll[k] || {}, roomsRequired: roomsReq(k) };
   }
+  for (const e of evs) if (e.calId && e.calId !== e.id && events[e.id] && !events[e.calId]) events[e.calId] = events[e.id];
   return json({ events });
 };
 

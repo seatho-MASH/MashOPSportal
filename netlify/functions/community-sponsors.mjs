@@ -1,5 +1,6 @@
 import { getStore } from '@netlify/blobs';
 import { loadEvents } from './_shows.mjs';
+import { appendAudit, whoFrom } from './_audit.mjs';
 
 // Read/write sponsors for an event (CORS-enabled). The Community planner now lives in this
 // portal and edits sponsors in-page, so this endpoint is only for external callers.
@@ -41,17 +42,25 @@ export default async (req) => {
     if (b.action === 'add') {
       const company = String(b.company || '').trim(); if (!company) return json({ error: 'company is required' }, 400);
       const sp = { id: 'sp' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), company, tier: String(b.tier || '').trim(), contacts: [], addedAt: new Date().toISOString() };
-      st.sponsors[ev].push(sp); await save(store, st); return json({ ok: true, sponsor: { id: sp.id, company: sp.company, tier: sp.tier, contacts: 0 } });
+      st.sponsors[ev].push(sp); await save(store, st);
+      await appendAudit(ev, [{ by: whoFrom(req), area: 'Sponsors', action: 'added', item: company }], store);
+      return json({ ok: true, sponsor: { id: sp.id, company: sp.company, tier: sp.tier, contacts: 0 } });
     }
     if (b.action === 'update') {
       const sp = st.sponsors[ev].find(x => x.id === b.id); if (!sp) return json({ error: 'sponsor not found' }, 404);
+      const was = { company: sp.company, tier: sp.tier };
       if (b.company != null) sp.company = String(b.company).trim();
       if (b.tier != null) sp.tier = String(b.tier).trim();
-      await save(store, st); return json({ ok: true });
+      await save(store, st);
+      await appendAudit(ev, ['company', 'tier'].filter(k => String(was[k] ?? '') !== String(sp[k] ?? ''))
+        .map(k => ({ by: whoFrom(req), area: 'Sponsors', action: 'changed', item: sp.company, field: k, from: was[k] ?? '', to: sp[k] ?? '' })), store);
+      return json({ ok: true });
     }
     if (b.action === 'delete') {
       const sp = st.sponsors[ev].find(x => x.id === b.id); if (sp) sp.deleted = true;
-      await save(store, st); return json({ ok: true });
+      await save(store, st);
+      if (sp) await appendAudit(ev, [{ by: whoFrom(req), area: 'Sponsors', action: 'removed', item: sp.company }], store);
+      return json({ ok: true });
     }
     return json({ error: 'Unknown action' }, 400);
   }

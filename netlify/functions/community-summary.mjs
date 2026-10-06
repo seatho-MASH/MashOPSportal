@@ -3,7 +3,8 @@ import { STORE_NAME, loadEvents } from './_shows.mjs';
 import { readCommunity, computeEvent } from './_community.mjs';
 
 // Read-only per-event community figures for the event calendar drawer.
-// GET /api/community-summary → { events: { [eventId]: { required, count, demand } } }
+// GET /api/community-summary → { events: { [eventId]: { required, count, demand, sponsors, delivered } } }
+// Keyed by the Ops id AND, where it differs, the calendar id (the calendar drawer looks up by its own id).
 //
 // Everything is computed on request: sponsors from the Ops store, packages and
 // agenda from the community state, delegates live from HubSpot (or the override).
@@ -51,10 +52,11 @@ export default async (req) => {
   async function worker() { while (queue.length) { const id = queue.shift(); try { counts[id] = TOKEN ? await liveCount(jiById[id]) : null; } catch { counts[id] = null; } } }
   await Promise.all([worker(), worker(), worker(), worker()]);
 
+  const calOf = Object.fromEntries(events.map(e => [e.id, e.calId]));
   const out = {};
   for (const id of ids) {
     const c = computeEvent(community.events[id], sponsorsAll[id], counts[id]);
-    if (c.demand || c.required || c.count != null) out[id] = c;
+    if (c.demand || c.required || c.count != null) { out[id] = c; if (calOf[id] && calOf[id] !== id) out[calOf[id]] = c; }
   }
   return json({ events: out, updatedAt: new Date().toISOString() });
 };

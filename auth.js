@@ -25,6 +25,8 @@
       try { app.logoutPopup(); } catch (e) {}
       return;
     }
+    // Who is signed in — the page sends this with each save for the History tab.
+    window.PORTAL_USER = { email: email, name: (acc && acc.name) || "" };
     reveal();
   }
 

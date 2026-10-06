@@ -10,6 +10,7 @@
 //       slots, maxPerDelegate, delegateOverride,
 //       packages: [{id,name,meetings}],         // per-event packages
 //       assign:   { [sponsorId]: packageId },   // sponsor ids are Ops sponsor ids
+//       delivered:{ [sponsorId]: n },           // meetings actually held (fulfilment)
 //       updatedAt
 //     } }
 //   }
@@ -79,5 +80,9 @@ export function computeEvent(evState, sponsors, liveCount) {
   const required = cap > 0 ? Math.max(maxSingle, Math.ceil(demand / cap)) : (demand > 0 ? null : maxSingle);
   const ov = String(ev.delegateOverride ?? '').trim();
   const count = ov !== '' ? (+ov || 0) : (liveCount ?? null);
-  return { required, count, demand };
+  const live = (sponsors || []).filter(s => !s.deleted);
+  const del = ev.delivered || {};
+  const delivered = live.reduce((n, s) => n + (+del[s.id] || 0), 0);
+  const logged = live.some(s => del[s.id] != null && del[s.id] !== '');
+  return { required, count, demand, sponsors: live.length, delivered: logged ? delivered : null };
 }

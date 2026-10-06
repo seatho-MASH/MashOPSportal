@@ -1,4 +1,5 @@
 import { graphToken, eventFromSharePoint, sendMail } from './_graph.mjs';
+import { loadEventById } from './_shows.mjs';
 
 const SENDER = process.env.OPS_MAIL_SENDER; // mailbox the briefing is sent from
 
@@ -90,7 +91,10 @@ export default async (req) => {
 
   // Pull venue + dates (and build/breakdown days) live from SharePoint.
   if (ev.eventId) {
-    try { const sp = await eventFromSharePoint(ev.eventId, tok);
+    // SharePoint is keyed by the calendar id, which differs from the Ops id for a few older events.
+    let calId = ev.eventId;
+    try { const meta = await loadEventById(ev.eventId); if (meta) { calId = meta.calId || calId; if (!ev.venue && meta.venue) ev.venue = meta.venue; } } catch { /* fall back to the Ops id */ }
+    try { const sp = await eventFromSharePoint(calId, tok);
       if (sp) { if (!ev.venue && sp.location) ev.venue = sp.location; ev.startDate = sp.startDate; ev.endDate = sp.endDate; ev.buildDays = sp.buildDays; ev.breakdownDays = sp.breakdownDays; }
     } catch (e) { /* non-fatal */ }
   }

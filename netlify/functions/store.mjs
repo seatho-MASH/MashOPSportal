@@ -1,4 +1,5 @@
 import { getStore } from '@netlify/blobs';
+import { appendAudit, diffPortalState, whoFrom } from './_audit.mjs';
 
 const KEY = 'portal-state-v1';
 
@@ -46,6 +47,9 @@ export default async (req) => {
       updatedAt: new Date().toISOString(),
     };
     await store.setJSON(KEY, next);
+    // History tab: one log per event, written after the save succeeds.
+    const changes = diffPortalState(current, next, whoFrom(req));
+    await Promise.all(Object.entries(changes).map(([ev, list]) => appendAudit(ev, list, store)));
     return json(next);
   }
 
