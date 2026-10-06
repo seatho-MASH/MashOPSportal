@@ -1325,7 +1325,7 @@ function renderCommunity(box){
   /* fulfilment — meetings actually held */
   const fc=el('div','ccard');
   fc.appendChild(el('div','ch','Meetings delivered'));
-  fc.appendChild(el('div','chint','Log how many meetings each sponsor actually got once the event has run. Leave blank until then. (Grip should be able to fill this automatically once its API is available.)'));
+  fc.appendChild(el('div','chint','Log how many meetings each sponsor actually got once the event has run. Leave blank until then.'));
   const fsum=el('div');fsum.style.cssText='margin-bottom:8px;font-size:13px';
   const ft=el('table');ft.innerHTML='<thead><tr><th>Sponsor</th><th class="r" style="width:80px">Promised</th><th class="r" style="width:96px">Delivered</th><th class="r" style="width:60px">%</th></tr></thead>';
   const fb=el('tbody');ft.appendChild(fb);
