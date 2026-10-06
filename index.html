@@ -113,6 +113,25 @@
   .savechip{font-size:11px;color:var(--dim)}
   .savechip.ok{color:var(--good)}
 
+  /* community planner */
+  .comgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  @media(max-width:1100px){.comgrid{grid-template-columns:1fr}}
+  .ccard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+  .ccard .ch{font-size:14px;font-weight:700;margin-bottom:4px}
+  .ccard .chint{font-size:12px;color:var(--mut);margin-bottom:10px}
+  .ccard th{background:var(--card);position:static}
+  .ccard td,.ccard th{padding:6px 8px;vertical-align:middle}
+  .ccard .r{text-align:right}
+  .cmetric{display:flex;gap:12px;flex-wrap:wrap}
+  .cbig{flex:1 1 130px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .cbig .n{font-size:30px;font-weight:800;line-height:1.05}
+  .cbig .l{font-size:11.5px;color:var(--mut);margin-top:3px}
+  .verdict{border-radius:10px;padding:11px 13px;font-weight:600;margin-top:12px;font-size:13px;border:1px solid}
+  .verdict.ok{color:var(--good);border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.08)}
+  .verdict.short{color:var(--bad);border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.08)}
+  .verdict.warn{color:var(--warn);border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08)}
+  .warnline{color:var(--bad);font-size:12px;margin-top:6px}
+
   /* type badges + print */
   .tb{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--line2)}
   .tb.del{color:var(--accent);border-color:rgba(0,212,170,.4)}
@@ -184,6 +203,7 @@
       <div class="tabs" id="tabs">
         <div class="tab on" data-tab="delegates">Delegates<span class="b" id="tabCountDel">–</span></div>
         <div class="tab" data-tab="sponsors">Sponsors<span class="b" id="tabCountSpo">–</span></div>
+        <div class="tab" data-tab="community" title="Minimum community delegates needed to cover sponsors' meeting packages">Community<span class="b" id="tabCountCom">–</span></div>
         <div class="tab" data-tab="speakers">Speakers<span class="b" id="tabCountSpk">–</span></div>
         <div class="tab" data-tab="staff">Staff<span class="b" id="tabCountStf">–</span></div>
         <div class="tab" data-tab="checkin">All Attendee Data<span class="b" id="tabCountChk">–</span></div>
@@ -194,6 +214,7 @@
   </div>
 </div>
 
+<datalist id="tierList"><option value="Headline"><option value="Engagement"><option value="Content"></datalist>
 <script type="module">
 // ---------- fallback event list (server overrides this on load) ----------
 const FALLBACK_EVENTS = [
@@ -320,6 +341,7 @@ async function autoSync(){
     syncTick++;
     if(syncTick%2===0){await loadSummary();}
     if(S.selected){delete S.attendees[S.selected];await loadAttendees(S.selected);}
+    if(COM.data&&!comBusy())await loadCommunity(true);
     if(!isEditing()){updateTabCounts();renderEvents();renderBody();}
     const chip=$('#saveChip');if(chip&&!chip.textContent){chip.textContent='Synced';setTimeout(()=>{if(chip.textContent==='Synced')chip.textContent='';},1500);}
   }catch{}
@@ -329,6 +351,7 @@ function clearsave(){if(saveTimer)clearTimeout(saveTimer);}
 /* ---------- room allocation ---------- */
 const CAL_API='https://mashportal.netlify.app'; // calendar feed → room totals
 var ROOM_TOTALS={}; // eventId -> total rooms booked (entered on the calendar)
+var CAL_EVENTS={}; // eventId -> calendar record (dates/venue for the Community tab)
 function roomsMap(id){S.store.rooms??={};return (S.store.rooms[id]??={});}
 // A room belongs to a PERSON, keyed by email (so someone who is e.g. a speaker AND a delegate
 // only counts once and ticking them in one list shows in the other). Falls back to scan ID then record id.
@@ -370,7 +393,7 @@ function roomSummaryHTML(id){const alloc=roomsReq(id),tot=roomsTotal(id);
   return s;}
 function roomBar(id){const d=el('div','banner');d.classList.add('roombar');d.innerHTML=roomSummaryHTML(id);d.style.background='var(--bg)';return d;}
 function refreshRoomBars(){if(!S.selected)return;document.querySelectorAll('.roombar').forEach(b=>{b.innerHTML=roomSummaryHTML(S.selected);});}
-async function loadRoomTotals(){try{const r=await fetch(CAL_API.replace(/\/$/,'')+'/api/calendar');const d=await r.json();(d.events||[]).forEach(e=>{if(e&&e.id!=null&&e.roomsTotal!=null)ROOM_TOTALS[e.id]=+e.roomsTotal||0;});refreshRoomBars();}catch(e){}}
+async function loadRoomTotals(){try{const r=await fetch(CAL_API.replace(/\/$/,'')+'/api/calendar');const d=await r.json();(d.events||[]).forEach(e=>{if(e&&e.id!=null){CAL_EVENTS[e.id]=e;if(e.roomsTotal!=null)ROOM_TOTALS[e.id]=+e.roomsTotal||0;}});refreshRoomBars();}catch(e){}}
 
 async function loadAttendees(id){
   if(S.attendees[id])return S.attendees[id];
@@ -478,6 +501,7 @@ function updateTabCounts(){
   const spkN=(S.store.speakers[id]||[]).filter(x=>!x.deleted).length;
   const stfN=((S.store.staff||{})[id]||[]).filter(x=>!x.deleted).length;$('#tabCountStf').textContent=stfN;
   $('#tabCountChk').textContent=liveN+manN+sc+spkN+stfN;
+  if(COM.data){const r=comCompute(id);$('#tabCountCom').textContent=r.sps.length?(r.byCap===Infinity?'∞':r.min):'–';}
 }
 
 // ---------- CSV ----------
@@ -503,6 +527,7 @@ function renderBody(){
   else if(S.tab==='sponsors')renderSponsors(box);
   else if(S.tab==='speakers')renderSpeakers(box);
   else if(S.tab==='staff')renderStaff(box);
+  else if(S.tab==='community')renderCommunity(box);
   else renderCheckin(box);
 }
 
@@ -591,7 +616,7 @@ function renderSponsors(box){
   add.innerHTML='<div style="font-weight:600;margin-bottom:8px">Add a sponsor</div>';
   const g=el('div','grid2');
   const cName=field('Sponsor / company','text','e.g. Cvent');
-  const cTier=field('Tier / package','text','e.g. Headline, Gold, Exhibitor');
+  const cTier=field('Tier / package','text','Headline, Engagement or Content');cTier.input.setAttribute('list','tierList');
   g.append(cName.wrap,cTier.wrap);
   const btn=el('button','btn primary sm','Add sponsor');btn.style.marginTop='8px';
   btn.onclick=()=>{
@@ -1067,6 +1092,230 @@ function renderAdmin(box){
   t.appendChild(tbody);wrap.appendChild(t);box.appendChild(wrap);
 }
 
+// ----- COMMUNITY (merged in from the old Community Portal, Oct 2026) -----
+// Minimum community delegates needed to cover every sponsor's 1-2-1 meetings.
+// Sponsors ARE the Ops sponsors (S.store.sponsors) — no second copy, no proxy.
+// Packages / agenda / assignments live in /api/community-store, saved per event.
+const COM_DEFAULT_PKGS=[{name:'Headline',meetings:15},{name:'Engagement',meetings:10},{name:'Content',meetings:10}];
+const COM={data:null,loading:false,error:'',timers:{},pending:new Set()};
+async function loadCommunity(force){
+  if(COM.loading)return COM.data;
+  if(COM.data&&!force)return COM.data;
+  COM.loading=true;
+  try{const d=await api('/api/community-store');COM.data={packages:d.packages||[],events:d.events||{}};COM.error='';}
+  catch(e){COM.error=String(e.message||e);if(!COM.data&&S.demo)COM.data={packages:[],events:{}};}
+  COM.loading=false;
+  return COM.data;
+}
+function comEv(id){
+  const evs=COM.data.events;
+  const e=evs[id]=evs[id]||{slots:10,maxPerDelegate:'',delegateOverride:'',assign:{}};
+  e.assign=e.assign||{};
+  if(!e.packages||!e.packages.length){
+    const src=(COM.data.packages&&COM.data.packages.length)?COM.data.packages:COM_DEFAULT_PKGS;
+    e.packages=src.map(p=>({id:p.id||('p'+uid()),name:p.name,meetings:+p.meetings||0}));
+  }
+  return e;
+}
+function saveCom(id){
+  if(S.demo||!COM.data)return;
+  const chip=$('#saveChip');chip.textContent='Saving…';chip.className='savechip';
+  COM.pending.add(id);clearTimeout(COM.timers[id]);
+  COM.timers[id]=setTimeout(async()=>{
+    delete COM.timers[id];
+    try{
+      await api('/api/community-store',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event:id,data:COM.data.events[id]})});
+      chip.textContent='Saved ✓';chip.className='savechip ok';
+    }catch(e){chip.textContent='Community save failed';chip.className='savechip';}
+    COM.pending.delete(id);
+    setTimeout(()=>{if(chip.textContent.indexOf('Saving')===-1)chip.textContent='';},2500);
+  },600);
+}
+function comBusy(){return COM.pending.size>0;}
+// Sponsors with no package yet: match their Ops tier to a package name.
+function comAutoAssign(id){
+  const e=comEv(id);let changed=false;
+  (S.store.sponsors[id]||[]).filter(s=>!s.deleted).forEach(sp=>{
+    if(e.assign[sp.id]&&e.packages.some(p=>p.id===e.assign[sp.id]))return;
+    const t=String(sp.tier||'').toLowerCase().trim();if(!t)return;
+    const m=e.packages.find(p=>p.name.toLowerCase().trim()===t)||e.packages.find(p=>p.name&&t.indexOf(p.name.toLowerCase().trim())>=0);
+    if(m){e.assign[sp.id]=m.id;changed=true;}
+  });
+  return changed;
+}
+function comCompute(id){
+  const e=comEv(id),sps=(S.store.sponsors[id]||[]).filter(s=>!s.deleted);
+  const byId=Object.fromEntries(e.packages.map(p=>[p.id,p]));
+  const mtg=sp=>{const p=byId[e.assign[sp.id]];return p?(+p.meetings||0):0;};
+  const meetings=sps.map(mtg);
+  const demand=meetings.reduce((a,b)=>a+b,0);
+  const maxSingle=meetings.length?Math.max(...meetings):0;
+  const slots=+e.slots||0,maxPd=+e.maxPerDelegate||0;
+  const cap=maxPd>0?(slots>0?Math.min(maxPd,slots):maxPd):slots;
+  const byCap=cap>0?Math.ceil(demand/cap):(demand>0?Infinity:0);
+  const min=Math.max(maxSingle,byCap===Infinity?maxSingle:byCap);
+  const live=S.counts[id]!=null?S.counts[id]:null;
+  const ov=String(e.delegateOverride??'').trim();
+  const have=ov!==''?(+ov||0):live;
+  return {e,sps,mtg,byId,demand,maxSingle,slots,maxPd,cap,byCap,min,live,have,ov};
+}
+function fmtRange(a,b){if(!a)return '';const f=s=>fmtDate(String(s).slice(0,10)+'T00:00:00');return (!b||b===a)?f(a):(f(a)+' – '+f(b));}
+
+function renderCommunity(box){
+  box.innerHTML='';
+  const id=S.selected;
+  if(!COM.data){
+    if(COM.error&&!COM.loading){
+      box.appendChild(el('div','empty','<div class="big">Couldn\'t load the community planner</div>'+esc(COM.error)));
+      const rb=el('button','btn sm','Retry');rb.onclick=()=>loadCommunity(true).then(()=>{if(S.tab==='community')renderBody();});
+      box.appendChild(rb);return;
+    }
+    box.appendChild(el('div','empty','<span class="spinner"></span> Loading community planner…'));
+    if(!COM.loading)loadCommunity().then(()=>{if(S.tab==='community')renderBody();});
+    return;
+  }
+  const e=comEv(id);
+  if(comAutoAssign(id))saveCom(id);
+
+  const cal=CAL_EVENTS[id];
+  box.appendChild(el('div','banner','<strong>Community planner.</strong> The minimum community delegates needed to cover every sponsor\'s 1-2-1 meeting package. Sponsors are the ones on the Sponsors tab; delegates are live from HubSpot.'
+    +(cal?('<div style="margin-top:4px">'+esc(fmtRange(cal.start,cal.end))+' · '+(cal.location?esc(cal.location):'venue not set on the calendar')+'</div>'):'')));
+
+  const grid=el('div','comgrid'),L=el('div'),R=el('div');grid.append(L,R);box.appendChild(grid);
+
+  /* packages */
+  const pc=el('div','ccard');
+  pc.appendChild(el('div','ch','Sponsorship packages <span class="muted" style="font-weight:400;font-size:12px">· this event</span>'));
+  pc.appendChild(el('div','chint','Meetings each package promises at this event. Names match the sponsor tiers, so sponsors pick up their package automatically.'));
+  const pt=el('table');pt.innerHTML='<thead><tr><th>Package</th><th class="r" style="width:110px">Meetings</th><th style="width:44px"></th></tr></thead>';
+  const pb=el('tbody');pt.appendChild(pb);pc.appendChild(pt);
+  const pa=el('div','addrow');
+  const pn=el('input');pn.placeholder='Package name';pn.style.flex='1 1 140px';
+  const pm=el('input');pm.type='number';pm.min='0';pm.value='10';pm.style.width='90px';
+  const pbtn=el('button','btn sm','Add package');
+  pa.append(pn,pm,pbtn);pc.appendChild(pa);L.appendChild(pc);
+
+  /* agenda */
+  const ac=el('div','ccard');
+  ac.appendChild(el('div','ch','Agenda'));
+  ac.appendChild(el('div','chint','Meeting slots = 1-2-1 rounds in the agenda (each sponsor runs one meeting per slot). Max meetings per delegate caps how many one delegate is asked to do — the lower of the two is each delegate\'s capacity.'));
+  const ag=el('div','grid2');
+  const mkNum=(label,key,ph)=>{const w=el('div','field');w.appendChild(el('label',null,esc(label)));
+    const i=el('input');i.type='number';i.min='0';i.value=e[key]??'';if(ph)i.placeholder=ph;
+    i.oninput=()=>{e[key]=key==='slots'?(+i.value||0):key==='delegateOverride'?i.value.trim():(i.value===''?'':(+i.value||0));saveCom(id);paint();};
+    w.appendChild(i);return w;};
+  ag.append(mkNum('Meeting slots','slots'),mkNum('Max meetings / delegate','maxPerDelegate','= slots'),mkNum('Delegates available (override)','delegateOverride','live from HubSpot'));
+  ac.appendChild(ag);
+  const live=el('div','muted');live.style.cssText='margin-top:8px;font-size:12px';ac.appendChild(live);
+  L.appendChild(ac);
+
+  /* sponsors */
+  const sc=el('div','ccard');const sh=el('div','ch');sc.appendChild(sh);
+  sc.appendChild(el('div','chint','Choosing a package also sets the sponsor\'s tier. Remove sponsors, or log their attendees, on the Sponsors tab.'));
+  const st=el('table');st.innerHTML='<thead><tr><th>Sponsor</th><th style="width:170px">Package</th><th class="r" style="width:60px">Mtgs</th></tr></thead>';
+  const sb=el('tbody');st.appendChild(sb);sc.appendChild(st);
+  const sa=el('div','addrow');
+  const sn=el('input');sn.placeholder='New sponsor company';sn.style.flex='1 1 160px';
+  const sp2=el('select');const sbtn=el('button','btn sm','Add sponsor');
+  sa.append(sn,sp2,sbtn);sc.appendChild(sa);L.appendChild(sc);
+
+  /* results */
+  const rc=el('div','ccard');
+  rc.appendChild(el('div','ch','Minimum delegates needed'));
+  rc.appendChild(el('div','chint','The larger of (a) the biggest single package and (b) total meetings ÷ the meetings each delegate can do.'));
+  const met=el('div','cmetric'),vbox=el('div'),wbox=el('div');rc.append(met,vbox,wbox);R.appendChild(rc);
+  const bc=el('div','ccard');
+  bc.appendChild(el('div','ch','How it\'s calculated'));
+  const ct=el('table');bc.appendChild(ct);
+  const bh=el('div','ch','By package');bh.style.marginTop='14px';bc.appendChild(bh);
+  const bt=el('table');bc.appendChild(bt);R.appendChild(bc);
+
+  function drawPkgs(){
+    pb.innerHTML='';
+    if(!e.packages.length)pb.appendChild(el('tr',null,'<td colspan="3" class="muted">No packages yet.</td>'));
+    e.packages.forEach(p=>{
+      const tr=el('tr');
+      const n=el('input','cellinput');n.value=p.name;let was=p.name;
+      n.oninput=()=>{p.name=n.value;saveCom(id);drawSponsors();drawPkgOpts();paint();};
+      // a renamed package renames the tier of the sponsors on it, so Ops stays in step
+      n.onchange=()=>{const nv=String(p.name||'').trim();
+        if(nv&&nv!==was){let ch=false;(S.store.sponsors[id]||[]).forEach(sp=>{if(!sp.deleted&&e.assign[sp.id]===p.id&&sp.tier!==nv){sp.tier=nv;ch=true;}});if(ch){queueSave();drawSponsors();}}
+        was=nv;};
+      const m=el('input','cellinput');m.type='number';m.min='0';m.value=+p.meetings||0;m.style.textAlign='right';
+      m.oninput=()=>{p.meetings=+m.value||0;saveCom(id);drawSponsors();paint();};
+      const x=el('button','btn sm ghost danger','✕');x.title='Remove package';
+      x.onclick=()=>{e.packages=e.packages.filter(q=>q.id!==p.id);Object.keys(e.assign).forEach(k=>{if(e.assign[k]===p.id)delete e.assign[k];});saveCom(id);drawPkgs();drawSponsors();paint();};
+      const a=el('td'),b=el('td'),c=el('td');a.appendChild(n);b.appendChild(m);c.appendChild(x);tr.append(a,b,c);pb.appendChild(tr);
+    });
+    drawPkgOpts();
+  }
+  function drawPkgOpts(){const v=sp2.value;sp2.innerHTML='<option value="">— package —</option>'+e.packages.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+' ('+(+p.meetings||0)+')</option>').join('');sp2.value=v;}
+  function drawSponsors(){
+    const r=comCompute(id);
+    sh.innerHTML='Sponsors <span class="pill">'+r.sps.length+'</span>';
+    sb.innerHTML='';
+    if(!r.sps.length){sb.appendChild(el('tr',null,'<td colspan="3" class="muted">No sponsors for this event yet — add one below or on the Sponsors tab.</td>'));return;}
+    [...r.sps].sort((a,b)=>(a.company||'').localeCompare(b.company||'')).forEach(sp=>{
+      const tr=el('tr');
+      const p=r.byId[e.assign[sp.id]];
+      const showTier=sp.tier&&(!p||p.name.trim().toLowerCase()!==String(sp.tier).trim().toLowerCase());
+      tr.appendChild(el('td',null,esc(sp.company)+(showTier?' <span class="pill" title="Tier on the Sponsors tab">'+esc(sp.tier)+'</span>':'')));
+      const sel=el('select');sel.style.width='100%';
+      sel.innerHTML='<option value="">— none —</option>'+e.packages.map(q=>'<option value="'+esc(q.id)+'">'+esc(q.name)+'</option>').join('');
+      sel.value=e.assign[sp.id]||'';
+      sel.onchange=()=>{
+        if(sel.value)e.assign[sp.id]=sel.value;else delete e.assign[sp.id];
+        const q=e.packages.find(z=>z.id===sel.value);sp.tier=q?q.name:'';
+        queueSave();saveCom(id);drawSponsors();paint();
+      };
+      const td=el('td');td.appendChild(sel);tr.appendChild(td);
+      tr.appendChild(el('td','r',String(r.mtg(sp))));
+      sb.appendChild(tr);
+    });
+  }
+  function paint(){
+    const r=comCompute(id);
+    live.innerHTML=r.live==null?'Live delegate count not loaded yet.':('🟢 Live from HubSpot: <strong>'+r.live+'</strong> delegate'+(r.live===1?'':'s')+' registered'+(r.ov!==''?' · <strong>override in use</strong>':''));
+    const minTxt=r.byCap===Infinity?'∞':r.min;
+    met.innerHTML='<div class="cbig"><div class="n">'+minTxt+'</div><div class="l">minimum delegates</div></div>'
+      +'<div class="cbig"><div class="n">'+(r.have==null?'—':r.have)+'</div><div class="l">delegates available</div></div>'
+      +'<div class="cbig"><div class="n">'+r.demand+'</div><div class="l">total meetings</div></div>';
+    let v;
+    if(r.byCap===Infinity&&r.demand>0)v=['warn','Set the meeting slots (and optionally max meetings per delegate) to calculate.'];
+    else if(r.have==null)v=['warn','Need <strong>'+r.min+'</strong> delegate'+(r.min===1?'':'s')+' minimum. Waiting on the live delegate count…'];
+    else if(r.have>=r.min)v=['ok','✓ Covered — <strong>'+r.have+'</strong> delegates available vs <strong>'+r.min+'</strong> needed'+(r.have>r.min?' ('+(r.have-r.min)+' spare)':'')+'.'];
+    else v=['short','⚠ Short by <strong>'+(r.min-r.have)+'</strong> — need <strong>'+r.min+'</strong>, have <strong>'+r.have+'</strong>.'];
+    vbox.innerHTML='<div class="verdict '+v[0]+'">'+v[1]+'</div>';
+    const w=[];
+    if(r.slots>0)r.sps.forEach(sp=>{const m=r.mtg(sp);if(m>r.slots)w.push(esc(sp.company)+' needs '+m+' meetings but there are only '+r.slots+' slots — impossible to fully satisfy.');});
+    const un=r.sps.filter(sp=>!r.byId[e.assign[sp.id]]).length;
+    if(un)w.push(un+' sponsor'+(un===1?' has':'s have')+' no package (counted as 0 meetings).');
+    wbox.innerHTML=w.map(x=>'<div class="warnline">• '+x+'</div>').join('');
+    const capLbl=(r.maxPd>0&&r.slots>0&&r.maxPd<r.slots)?(r.cap+' (capped at '+r.maxPd+'/delegate)'):(r.cap||'—');
+    const row=(l,x)=>'<tr><td>'+l+'</td><td class="r">'+x+'</td></tr>';
+    ct.innerHTML='<tbody>'+row('Total meetings promised',r.demand)+row('Biggest single package',r.maxSingle)+row('Agenda meeting slots',r.slots||'—')
+      +row('Max meetings per delegate',r.maxPd>0?r.maxPd:'= slots')+row('Meetings each delegate can do',capLbl)
+      +row('Meetings ÷ per-delegate capacity (rounded up)',r.cap>0?Math.ceil(r.demand/r.cap):'—')
+      +row('<strong>Minimum delegates</strong>','<strong>'+minTxt+'</strong>')+'</tbody>';
+    const groups={};r.sps.forEach(sp=>{const k=r.byId[e.assign[sp.id]]?e.assign[sp.id]:'';(groups[k]=groups[k]||[]).push(sp);});
+    let rows=e.packages.map(p=>{const n=(groups[p.id]||[]).length;if(!n)return '';return '<tr><td>'+esc(p.name)+'</td><td class="r">'+n+'</td><td class="r">'+(+p.meetings||0)+'</td><td class="r">'+(n*(+p.meetings||0))+'</td></tr>';}).join('');
+    const nn=(groups['']||[]).length;if(nn)rows+='<tr><td class="muted">No package</td><td class="r">'+nn+'</td><td class="r">0</td><td class="r">0</td></tr>';
+    bt.innerHTML='<thead><tr><th>Package</th><th class="r">Sponsors</th><th class="r">Meetings each</th><th class="r">Total</th></tr></thead><tbody>'+(rows||'<tr><td colspan="4" class="muted">No sponsors yet.</td></tr>')+'</tbody>';
+    updateTabCounts();
+  }
+
+  pbtn.onclick=()=>{const v=pn.value.trim();if(!v)return pn.focus();e.packages.push({id:'p'+uid(),name:v,meetings:+pm.value||0});pn.value='';saveCom(id);drawPkgs();drawSponsors();paint();};
+  sbtn.onclick=()=>{
+    const v=sn.value.trim();if(!v)return sn.focus();
+    const p=e.packages.find(q=>q.id===sp2.value);
+    const rec={id:uid(),company:v,tier:p?p.name:'',contacts:[],addedAt:new Date().toISOString()};
+    (S.store.sponsors[id]??=[]).push(rec);
+    if(p){e.assign[rec.id]=p.id;saveCom(id);}
+    sn.value='';queueSave();drawSponsors();paint();
+  };
+  drawPkgs();drawSponsors();paint();
+}
+
 // ---------- tabs ----------
 $('#tabs').querySelectorAll('.tab').forEach(t=>{
   t.onclick=async()=>{
@@ -1093,6 +1342,9 @@ function applyTheme(t){document.documentElement.setAttribute('data-theme',t);try
   const today=new Date().toISOString().slice(0,10);
   const upcoming=[...S.events].filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0]||S.events[0];
   if(upcoming)selectEvent(upcoming.id);
+  loadCommunity().then(()=>{if(S.selected)updateTabCounts();});
+  // deep link from the team portal tile: …/#community
+  if(location.hash==='#community'){const t=document.querySelector('.tab[data-tab="community"]');if(t)t.click();}
   setInterval(autoSync,30000);
 })();
 </script>

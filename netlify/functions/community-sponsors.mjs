@@ -1,6 +1,9 @@
 import { getStore } from '@netlify/blobs';
+import { loadEvents } from './_shows.mjs';
 
-// Read/write sponsors for an event, shared with the Community Portal (CORS-enabled).
+// Read/write sponsors for an event (CORS-enabled). The Community planner now lives in this
+// portal and edits sponsors in-page, so this endpoint is only for external callers.
+// Unknown event ids now 404 instead of silently returning an empty list.
 // GET  /api/community-sponsors?event=EN100        → { event, sponsors:[{id,company,tier,contacts}] }
 // POST { action:'add', event, company, tier }     → creates a sponsor in the Ops store
 // POST { action:'update', event, id, company, tier }
@@ -17,9 +20,12 @@ export default async (req) => {
   const st = (await store.get(KEY, { type: 'json' })) || {};
   st.sponsors = st.sponsors || {};
 
+  const known = new Set((await loadEvents()).map(e => e.id));
+
   if (req.method === 'GET') {
     const id = new URL(req.url).searchParams.get('event');
     if (!id) return json({ error: 'event is required' }, 400);
+    if (!known.has(id)) return json({ error: `Unknown event: ${id}` }, 404);
     const sponsors = (st.sponsors[id] || []).filter(x => !x.deleted).map(sp => ({
       id: sp.id, company: sp.company || '', tier: sp.tier || '',
       contacts: (sp.contacts || []).filter(c => !c.deleted).length,
@@ -30,6 +36,7 @@ export default async (req) => {
   if (req.method === 'POST') {
     let b; try { b = await req.json(); } catch { return json({ error: 'Invalid JSON' }, 400); }
     const ev = b.event; if (!ev) return json({ error: 'event is required' }, 400);
+    if (!known.has(ev)) return json({ error: `Unknown event: ${ev}` }, 404);
     st.sponsors[ev] = st.sponsors[ev] || [];
     if (b.action === 'add') {
       const company = String(b.company || '').trim(); if (!company) return json({ error: 'company is required' }, 400);
