@@ -1,6 +1,22 @@
 [build]
   publish = "."
   functions = "netlify/functions"
+  # Applies the v2 database schema (idempotent). Skips with a warning if DATABASE_URL isn't set.
+  command = "npm run migrate"
 
 [functions]
   node_bundler = "esbuild"
+
+# Function source and the v2 schema/tests are not web pages.
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[headers]]
+  for = "/v2/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Content-Type-Options = "nosniff"

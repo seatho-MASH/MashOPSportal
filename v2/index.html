@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mash Ops — new</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/v2/assets/app.css">
+<link rel="manifest" href="/v2/manifest.webmanifest">
+<meta name="theme-color" content="#574596">
+</head>
+<body>
+<div id="gate" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div class="card" style="max-width:380px;width:100%;text-align:center;padding:34px 28px">
+    <svg width="52" height="40" viewBox="0 0 120 92" aria-hidden="true"><polyline points="14,76 34,16 60,54 86,16 106,76" fill="none" stroke="#574596" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <h1 style="font-size:22px;margin:12px 0 6px">Mash Ops</h1>
+    <p class="mut" style="margin:0 0 20px">Sign in with your Mash Media Microsoft account.</p>
+    <button class="btn pri" id="signin" style="width:100%">Sign in with Microsoft</button>
+    <p id="gate-msg" class="small bad-t" style="min-height:18px;margin:12px 0 0"></p>
+  </div>
+</div>
+<div class="app" id="app" hidden>
+  <nav class="side" aria-label="Main">
+    <div class="brandrow">
+      <svg width="34" height="26" viewBox="0 0 120 92" aria-hidden="true"><polyline points="14,76 34,16 60,54 86,16 106,76" fill="none" stroke="#574596" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Mash Ops
+    </div>
+    <button class="btn sm menu-btn" id="menu" aria-expanded="false" aria-controls="nav">Menu</button>
+    <button class="evpick" id="evpick" aria-haspopup="dialog"><b id="ev-name">Choose an event</b><span id="ev-meta">—</span></button>
+    <div class="nav" id="nav"></div>
+    <div class="who" id="who"></div>
+  </nav>
+  <main class="main" id="view" tabindex="-1"></main>
+</div>
+<dialog id="dlg"><div class="dh"><h2 id="dlg-t"></h2><button class="btn ghost sm" data-close aria-label="Close">✕</button></div><div class="db" id="dlg-b"></div></dialog>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script type="module" src="/v2/assets/js/app.js"></script>
+</body>
+</html>
