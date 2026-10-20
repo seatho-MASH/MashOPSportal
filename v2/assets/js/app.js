@@ -4,9 +4,10 @@ import { esc, $, fmtDate, toast } from './util.js';
 const VIEWS = {
   home: () => import('./views/home.js'), rota: () => import('./views/rota.js'), checkin: () => import('./views/checkin.js'),
   kit: () => import('./views/kit.js'), tables: () => import('./views/tables.js'), sponsors: () => import('./views/sponsors.js'),
-  leaderboards: () => import('./views/leaderboards.js'), admin: () => import('./views/admin.js'), history: () => import('./views/history.js'), scans: () => import('./views/scans.js')
+  leaderboards: () => import('./views/leaderboards.js'), admin: () => import('./views/admin.js'), history: () => import('./views/history.js'), scans: () => import('./views/scans.js'),
+  delegates: () => import('./views/delegates.js'), speakers: () => import('./views/speakers.js'), staff: () => import('./views/staff.js'),
+  community: () => import('./views/community.js'), everyone: () => import('./views/everyone.js'), cover: () => import('./views/cover.js')
 };
-const OLD = '';   // the current portal lives at the root of this same site
 const S = { user: null, me: null, events: [], eventId: null };
 try { S.eventId = localStorage.getItem('ops-event') || null; } catch {}
 
@@ -22,15 +23,13 @@ function nav() {
   const r = (location.hash.replace(/^#\//, '') || 'home').split('?')[0];
   const ev = ctx.ev, kind = ev ? ev.kind : '';
   const link = (id, label, extra = '') => `<a href="#/${id}" class="${r === id ? 'on' : ''}"${r === id ? ' aria-current="page"' : ''}>${label}${extra}</a>`;
-  const out = (label, path) => `<a href="${OLD}/${path}">${label}<span class="tag">current Ops</span></a>`;
   $('#nav').innerHTML = `
     <div class="navhd">Event</div>
     ${link('home', 'Overview')}
-    ${link('sponsors', 'Sponsors', '<span class="tag">Ledger</span>')}
-    ${out('Delegates', '')}${out('Speakers', '')}${out('Community', '#community')}
+    ${kind !== 'show' ? link('delegates', 'Delegates') : ''}${link('sponsors', 'Sponsors')}${link('community', 'Community planner')}${link('speakers', 'Speakers')}${link('staff', 'Staff')}${link('everyone', 'All attendees')}
     ${kind === 'show' || !ev ? `<div class="navhd">Show floor</div>${link('rota', 'Theatre rota')}${link('checkin', 'Check-in')}${link('kit', 'Kit register')}${ev ? link('scans', 'Scan check') : ''}` : `<div class="navhd">On the day</div>${link('kit', 'Kit register')}`}
     ${kind !== 'show' ? `<div class="navhd">Hospitality</div>${link('tables', 'Table planner')}` : ''}
-    <div class="navhd">Programmes</div>${link('leaderboards', '100 leaderboards')}
+    <div class="navhd">Programmes</div>${link('cover', 'Community cover')}${link('leaderboards', '100 leaderboards')}
     <div class="navhd">Settings</div>${S.me && S.me.admin ? link('admin', 'Admin') : ''}${link('history', 'History')}`;
   $('#ev-name').textContent = ev ? (ev.short_name || ev.name) : 'Choose an event';
   $('#ev-meta').textContent = ev ? `${fmtDate(ev.starts_on)} · ${ev.kind}` : (S.events.length ? 'No event chosen' : 'No events switched on yet');
@@ -43,7 +42,7 @@ async function route() {
   const load = VIEWS[key] || VIEWS.home;
   nav();
   const view = $('#view');
-  if (!ctx.ev && !['leaderboards', 'admin', 'kit'].includes(key)) {
+  if (!ctx.ev && !['leaderboards', 'admin', 'kit', 'cover'].includes(key)) {
     view.innerHTML = `<div class="wrap"><div class="card empty"><b>${S.events.length ? 'Choose an event' : 'No events are switched on in Ops yet'}</b>
       ${S.events.length ? 'Use the event button at the top left.' : (S.me.admin ? 'Go to <a href="#/admin">Admin</a>, sync the calendar and switch events on.' : 'Ask an Ops admin to switch events on.')}</div></div>`;
     return;

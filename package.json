@@ -6,7 +6,7 @@
   "description": "Mash Media ops portal — current portal at /, Mash Ops v2 (Neon) at /v2/",
   "scripts": {
     "migrate": "node netlify/v2/db/migrate.mjs",
-    "test": "node netlify/v2/test/run.mjs"
+    "test": "node netlify/v2/test/run.mjs && node netlify/v2/test/attendees.mjs"
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",

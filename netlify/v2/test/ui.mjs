@@ -8,10 +8,23 @@ import { q } from '../lib/db.mjs';
 
 const ROOT = new URL('../../../', import.meta.url).pathname, OUT = process.env.SHOTS || '/tmp/shots';
 const U = { email: 'tester@mashmedia.net', name: 'Tester', admin: true };
-const SHOW = 'zz-ui-show', AW = 'zz-ui-awards';
+const SHOW = 'zz-ui-show', AW = 'zz-ui-awards', SUM = 'zz-ui-summit';
 const FAKE_MSAL = `window.msal={PublicClientApplication:class{constructor(){}async initialize(){}getAllAccounts(){return[{username:'tester@mashmedia.net',name:'Test User'}]}async acquireTokenSilent(){return{idToken:'test'}}async loginPopup(){return{account:this.getAllAccounts()[0]}}async logoutPopup(){}}}`;
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
 
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (u, o = {}) => {
+  if (!String(u).includes('api.hubapi.com')) return realFetch(u, o);
+  const b = o.body ? JSON.parse(o.body) : {}, f = b.filterGroups?.[0]?.filters?.[0] || {};
+  const res = (x) => new Response(JSON.stringify(x));
+  const D = [['Sophia', 'Joseph', 'Signature Litigation', 'Executive Assistant', 'Vegetarian'], ['Heena', 'Balani', 'Streathers', 'Legal PA', ''], ['Marika', 'Haynes', 'Beazley', 'Office Manager', 'Gluten-free'], ['James', 'Owen', 'Gunnercooke', 'Operations Manager', '']]
+    .map(([fn, ln, co, jt, di], i) => ({ id: String(6100 + i), properties: { firstname: fn, lastname: ln, email: `${fn.toLowerCase()}.d@example.test`, company: co, jobtitle: jt, dietary_requirements: di, pas_scan_id: 'ID61' + i } }));
+  if (u.includes('/properties/contacts/joining_instructions')) return res({ options: [{ label: 'UI Summit 27', value: 'UI SUM 27' }] });
+  if (f.propertyName === 'joining_instructions') return res({ total: D.length, results: b.limit === 1 ? [] : D });
+  if (f.propertyName === 'email' && f.operator === 'CONTAINS_TOKEN') return res({ results: [{ id: '880', properties: { firstname: 'Tess', lastname: 'Ter', email: 'tester@mashmedia.net', jobtitle: 'Ops Manager', pas_scan_id: 'ID880' } }] });
+  return res({ results: [] });
+};
+process.env.HUBSPOT_TOKEN = 'test';
 async function seed() {
   await cleanup();
   await q(`insert into event (id, name, short_name, starts_on, ends_on, kind, ops_enabled, venue) values
@@ -40,6 +53,19 @@ async function seed() {
   const ppl = [['Amy', 'Lane', 'Visitor', 'R100', 'R100'], ['Raj', 'Patel', 'VIP', 'R101', 'R911'], ['Sue', 'Bell', 'Visitor', 'R102', null], ['Kai', 'Moss', 'Exhibitor', 'R103', 'R103']];
   const up = await call('POST', `/api/events/${SHOW}/scans/upload`, { source: 'reftech', filename: 'reftech-export.csv', rows: ppl.map(([f, l, b, r]) => ({ email: `${f.toLowerCase()}.s@example.test`, first_name: f, last_name: l, company: 'Sample Co', badge: b, scan_id: r })) });
   await call('POST', `/api/events/${SHOW}/scans/upload`, { source: 'grip', filename: 'grip-export.csv', rows: ppl.filter(x => x[4]).map(([f, l, b, , g]) => ({ email: `${f.toLowerCase()}.s@example.test`, first_name: f, last_name: l, badge: f === 'Kai' ? 'Visitor' : b, scan_id: g })) });
+  // summit: moved-over tabs
+  await q(`insert into event (id, name, short_name, starts_on, ends_on, kind, ops_enabled, ops_ji, venue, rooms_total, build_days) values ($1,'UI Test Summit 2027','UI Summit','2027-02-10','2027-02-10','summit',true,'UI SUM 27','The Brewery, 52 Chiswell St, London EC1Y 4SD',6,1)`, [SUM]);
+  await q("insert into staff_roster (email) values ('tester@mashmedia.net') on conflict do nothing");
+  const sp1 = (await call('POST', `/api/events/${SUM}/sponsors`, { company: 'Cvent', tier: 'Headline' })).sponsor;
+  await call('POST', `/api/events/${SUM}/sponsors`, { company: 'Hopin', tier: 'Engagement' });
+  await call('POST', `/api/events/${SUM}/sponsors`, { company: 'Swapcard', tier: 'Content' });
+  await call('POST', `/api/events/${SUM}/people/sponsor`, { rows: [{ name: 'Rita Rep', email: 'rita@example.test', jobtitle: 'Account Director' }, { name: 'Sam Rep', email: 'sam@example.test' }], sponsor_id: sp1.id });
+  await call('POST', `/api/events/${SUM}/people/speaker`, { rows: [{ name: 'Priya Keynote', email: 'priya.k@example.test', company: 'Acme', session: 'Opening keynote' }, { name: 'Heena Balani', email: 'heena.d@example.test', session: 'Panel' }] });
+  await call('POST', `/api/events/${SUM}/people/delegate`, { rows: [{ name: 'Walk Inn', email: 'walk@example.test', company: 'Walk Co' }] });
+  await call('PUT', `/api/events/${SUM}/staff/880`, { on: true });
+  await call('PUT', `/api/events/${SUM}/rooms`, { key: 'e:priya.k@example.test', on: true });
+  await call('PUT', `/api/events/${SUM}/community`, { slots: 8, max_per_delegate: 6 });
+  await call('PUT', `/api/events/${SUM}/onsite`, { dress_code: 'Branded polo', arrival: '07:30', finish: '18:00' });
   await call('POST', `/api/events/${AW}/tables`, { count: 6, seats: 10 });
   const orgs = [['Sample Agency', 10, 'Vegetarian'], ['Sample Media', 7, 'gluten free'], ['Sample Live', 5, ''], ['Sample Venues', 2, 'vegan'], ['Judges', 8, '']];
   await call('POST', `/api/events/${AW}/guests`, { rows: orgs.flatMap(([o, n, d]) => Array.from({ length: n }, (_, i) => ({ name: `${o.split(' ')[1] || o} Guest ${i + 1}`, organisation: o, dietary: i === 0 ? d : '' }))) });
@@ -54,7 +80,8 @@ async function cleanup() {
   await q("delete from programme_member where person_id in (select id from person where email like '%@example.test')");
   await q("delete from points_rule where programme_id='cn-agency100' and season='2026-27'");
   await q("delete from kit_item where sticker like 'ZZ-%'");
-  await q('delete from event where id = any($1)', [[SHOW, AW]]);
+  await q('delete from event where id = any($1)', [[SHOW, AW, SUM]]);
+  await q("delete from staff_roster where email='tester@mashmedia.net'");
   await q("delete from person where email like '%@example.test'");
   await q("delete from audit_log where actor=$1", [U.email]);
   await q("delete from scan_template where by_user=$1 and event_id = any($2)", [U.email, [SHOW, AW]]);
@@ -133,6 +160,28 @@ try {
   await page.goto('http://ops.test/v2/#/leaderboards'); await page.waitForSelector('table.t'); await page.waitForTimeout(600);
   console.log('leaderboard first row:', (await page.locator('table.t tbody tr').first().innerText()).replace(/\s+/g, ' '));
   await shot('10-leaderboard');
+  // summit: the tabs moved over from the current portal
+  await page.evaluate(() => localStorage.setItem('ops-event', 'zz-ui-summit'));
+  for (const [r, sel, n] of [['delegates', 'table.t', '13-delegates'], ['sponsors', 'form.addrep', '14-sponsors'], ['community', '#slots', '15-community'], ['speakers', 'table.t', '16-speakers'],
+      ['staff', '[data-ros]', '17-staff'], ['everyone', 'table.t', '18-everyone'], ['cover', 'table.t', '19-cover']]) {
+    await page.goto('http://ops.test/v2/#/' + r); await page.reload(); await page.waitForSelector(sel); await shot(n);
+  }
+  await page.goto('http://ops.test/v2/#/delegates'); await page.waitForSelector('table.t');
+  console.log('delegates rows:', await page.locator('tbody tr').count(), '| rooms bar:', (await page.textContent('.roombar')).trim());
+  await page.locator('input[data-room]').first().check(); await page.waitForTimeout(800);
+  console.log('after room tick:', (await page.textContent('.roombar')).trim());
+  await page.locator('input[data-method="PUT"]').first().fill('VIP'); await page.waitForTimeout(1200);
+  await page.click('#add-wrap summary'); await page.fill('#add-name', 'New Walkin'); await page.fill('#add-email', 'nw@example.test'); await page.click('#add button'); await page.waitForTimeout(1500);
+  console.log('after walk-in:', await page.locator('tbody tr').count(), 'rows');
+  await page.goto('http://ops.test/v2/#/community'); await page.waitForSelector('#slots');
+  console.log('community KPIs:', (await page.locator('.kpi .n').allTextContents()).join(' / '));
+  await page.goto('http://ops.test/v2/#/everyone'); await page.waitForSelector('table.t');
+  console.log('everyone chips:', (await page.locator('header .chip').allTextContents()).join(', '));
+  await page.emulateMedia({ media: 'print' }); await shot('20-everyone-print'); await page.emulateMedia({ media: 'screen' });
+  await page.goto('http://ops.test/v2/#/staff'); await page.waitForSelector('#brief'); await page.click('#brief'); await page.waitForTimeout(1500);
+  console.log('briefings queued:', (await q("select count(*)::int n from outbox where event_id=$1 and kind='briefing'", [SUM]))[0].n);
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto('http://ops.test/v2/#/sponsors'); await page.waitForSelector('form.addrep'); await shot('21-sponsors-phone');
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('http://ops.test/v2/#/admin'); await page.waitForSelector('main h1'); await shot('11-admin');
   await page.goto('http://ops.test/v2/#/history'); await page.waitForSelector('main h1'); await shot('12-history');
   await b.close();

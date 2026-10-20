@@ -71,3 +71,11 @@ Each event needs its registration code (CFX / EPS / PAS) set in Admin.
 - [ ] Exhibitors: decide where exhibitor badge types and scan IDs come from. If not HubSpot, either load that source or confirm the Reftech fallback is right.
 - [ ] First real run: load all three, then tidy the badge names under Badge types (saved per event).
 - [ ] When Grip or Reftech offer an API, replace the CSV upload for that source (`uploadSource` → a pull like `pullHubspot`).
+
+## Delegates, Sponsors, Speakers, Staff, All attendees, Community (moved from the current portal, Oct 2026)
+- **Data:** Neon tables `attendee`, `room_need`, `delegate_note`, `delegate_seen`, `event_onsite`, `community_*`, `staff_roster` and `setting`. The calendar sync also stores rooms total and build/breakdown days.
+- **Import:** Admin → Import from the current portal. It reads the old Blobs store and is safe to re-run. See `docs/v2-CUTOVER.md` for the switch.
+- **HubSpot:** delegates by Joining Instructions, email lookup for walk-ins and speakers, and the staff roster. The token needs contacts read, and the Admin dropdown also needs `crm.schemas.contacts.read`.
+- **Briefing emails** go through the outbox with an `.ics` invite. Build and breakdown days come from the calendar.
+- **Calendar endpoints (no sign-in, names and counts only):** `/api/v2-public/staffing` and `/api/v2-public/community-summary`.
+- **Tests:** `npm test` runs `run.mjs` and `attendees.mjs`. HubSpot is mocked, and the importer is tested against a fake copy of the old store.

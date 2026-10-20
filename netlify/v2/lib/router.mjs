@@ -10,6 +10,11 @@ import * as P from './points.mjs';
 import * as S from './sponsors.mjs';
 import { eventHome } from './home.mjs';
 import * as SC from './scans.mjs';
+import * as A from './attendees.mjs';
+import * as CM from './community.mjs';
+import * as ST from './staff.mjs';
+import * as LG from './legacy.mjs';
+import * as HS from './hubspot.mjs';
 
 const routes = [];
 const on = (method, pattern, fn) => {
@@ -96,6 +101,42 @@ on('POST', '/api/events/:id/scans/ack', (c) => SC.ack(c.user, c.p.id, c.body));
 on('GET', '/api/events/:id/scans/fix/:target/:kind', (c) => SC.fixFile(c.p.id, c.p.target, c.p.kind));
 on('PUT', '/api/scan-templates/:source', (c) => SC.putTemplate(c.user, c.p.source, c.body));
 on('DELETE', '/api/scan-templates/:source', (c) => SC.removeTemplate(c.user, c.p.source, c.query.event));
+
+// attendees (moved over from the current portal)
+on('GET', '/api/events/:id/counts', (c) => A.tabCounts(c.p.id));
+on('GET', '/api/events/:id/delegates', (c) => A.delegates(c.p.id, { fresh: c.query.fresh === '1' }));
+on('GET', '/api/events/:id/people/:kind', (c) => A.listKind(c.p.id, c.p.kind));
+on('POST', '/api/events/:id/people/:kind', (c) => A.addPeople(c.user, c.p.id, c.p.kind, c.body.rows || c.body, { sponsorId: c.body.sponsor_id }));
+on('PATCH', '/api/people/:pid', (c) => A.updatePerson(c.user, c.p.pid, c.body));
+on('DELETE', '/api/people/:pid', (c) => A.removePerson(c.user, c.p.pid));
+on('PUT', '/api/events/:id/rooms', (c) => A.setRoom(c.user, c.p.id, c.body.key, !!c.body.on));
+on('PUT', '/api/events/:id/delegate-notes/:cid', (c) => A.setDelegateNote(c.user, c.p.id, c.p.cid, c.body.note));
+on('GET', '/api/events/:id/everyone', (c) => A.everyone(c.p.id));
+on('PATCH', '/api/sponsors/:sid', (c) => S.updateSponsor(c.user, c.p.sid, c.body));
+// staff
+on('GET', '/api/staff-roster', (c) => ST.roster({ fresh: c.query.fresh === '1' }));
+on('PUT', '/api/events/:id/staff/:rid', (c) => ST.setAttending(c.user, c.p.id, c.p.rid, !!c.body.on));
+on('GET', '/api/events/:id/onsite', (c) => ST.getOnsite(c.p.id));
+on('PUT', '/api/events/:id/onsite', (c) => ST.putOnsite(c.user, c.p.id, c.body));
+on('GET', '/api/events/:id/nearest-station', (c) => ST.nearestStation(c.p.id));
+on('POST', '/api/events/:id/briefing', (c) => ST.queueBriefing(c.user, c.p.id, c.body.ids));
+// community
+on('GET', '/api/events/:id/community', (c) => CM.getCommunity(c.p.id));
+on('PUT', '/api/events/:id/community', (c) => CM.putSettings(c.user, c.p.id, c.body));
+on('POST', '/api/events/:id/community/packages', (c) => CM.addPackage(c.user, c.p.id, c.body));
+on('PATCH', '/api/community/packages/:pid', (c) => CM.updatePackage(c.user, c.p.pid, c.body));
+on('DELETE', '/api/community/packages/:pid', (c) => CM.removePackage(c.user, c.p.pid));
+on('PUT', '/api/events/:id/community/assign/:sid', (c) => CM.assignPackage(c.user, c.p.id, c.p.sid, c.body.package_id || null));
+on('PUT', '/api/sponsors/:sid/delivered', (c) => CM.setDelivered(c.user, c.p.sid, c.body.delivered));
+on('GET', '/api/community-cover', (c) => CM.cover({ past: c.query.past === '1' }));
+// admin
+on('GET', '/api/admin/ji-options', async () => { try { return { options: await HS.jiOptions() }; } catch (e) { return { options: null, error: String(e.message || e) }; } });
+on('POST', '/api/admin/ji-check', async (c) => ({ total: await HS.countFor(String(c.body.ji || '').trim() || (() => { throw bad('Pick a value first'); })()) }));
+on('GET', '/api/admin/import', () => LG.lastImport());
+on('POST', '/api/admin/import', (c) => LG.importLegacy(c.user));
+on('GET', '/api/admin/roster', (c) => { requireAdmin(c.user); return ST.rosterEmails(); });
+on('POST', '/api/admin/roster', (c) => ST.addRosterEmail(c.user, c.body.email));
+on('DELETE', '/api/admin/roster/:email', (c) => ST.removeRosterEmail(c.user, c.p.email));
 
 export async function handle(req, user) {
   const url = new URL(req.url);

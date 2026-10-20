@@ -14,8 +14,12 @@ export const ledgerConfigured = () => !!(process.env.LEDGER_API_URL && process.e
 export async function listSponsors(eventId) {
   const ev = await resolveEvent(eventId);
   const sponsors = await q('select * from sponsor where event_id=$1 and removed_at is null order by company', [ev.id]);
+  // The people each sponsor is sending (moved over from the current portal).
+  const { listKind } = await import('./attendees.mjs');
+  const reps = await listKind(ev.id, 'sponsor');
+  for (const sp of sponsors) sp.reps = reps.rows.filter(r => r.sponsorId === sp.id);
   const last = await one("select finished_at, ok, error, counts from sync_run where source='ledger' and counts->>'event' = $1 order by started_at desc limit 1", [ev.id]);
-  return { sponsors, ledger: { configured: ledgerConfigured(), lastSync: last } };
+  return { sponsors, rooms: reps.rooms, ledger: { configured: ledgerConfigured(), lastSync: last } };
 }
 
 export async function syncLedgerSponsors(eventId) {
@@ -55,8 +59,19 @@ export async function addManualSponsor(user, eventId, b) {
 }
 export async function removeSponsor(user, id) {
   const s = await one('select * from sponsor where id=$1', [id]); if (!s) throw notFound();
-  if (s.ledger_ref) throw bad('This sponsor comes from the Ledger — change it there.');
+  if (s.ledger_ref) throw bad('This sponsor comes from the Ledger, so change it there.');
   await q('update sponsor set removed_at=now() where id=$1', [id]);
   await audit(user, s.event_id, 'Sponsors', 'removed', s.company);
+  return { ok: true };
+}
+
+export async function updateSponsor(user, id, b) {
+  const s = await one('select * from sponsor where id=$1', [id]); if (!s) throw notFound();
+  if (s.ledger_ref && (b.company !== undefined || b.tier !== undefined)) throw bad('This sponsor comes from the Ledger, so change it there.');
+  const company = b.company !== undefined ? (str(b.company, 200) || s.company) : s.company;
+  const tier = b.tier !== undefined ? (str(b.tier, 60) || null) : s.tier;
+  await q('update sponsor set company=$2, tier=$3 where id=$1', [id, company, tier]);
+  if (company !== s.company) await audit(user, s.event_id, 'Sponsors', 'changed', s.company, { field: 'company', from: s.company, to: company });
+  if ((tier || '') !== (s.tier || '')) await audit(user, s.event_id, 'Sponsors', 'changed', company, { field: 'tier', from: s.tier || '', to: tier || '' });
   return { ok: true };
 }

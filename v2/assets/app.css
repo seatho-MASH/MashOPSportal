@@ -118,3 +118,21 @@ dialog .db{padding:14px 20px 20px}
 .g{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 8px;border-radius:7px;background:var(--bg);cursor:grab;border:1px solid transparent}
 .g.sel{border-color:var(--brand);background:var(--brand-soft)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px} button.kpi{font:inherit;color:inherit;width:100%} .kpi.on{outline:2px solid var(--brand);outline-offset:-2px}
+.banner.good{background:var(--good-soft,#E6F4EC);color:var(--good)}
+.cellin{min-width:110px;padding:6px 8px;font-size:13px;border-color:transparent;background:transparent}
+.cellin:hover{border-color:var(--line)} .cellin:focus{border-color:var(--brand);background:var(--surface)} .cellin.saved{box-shadow:inset 0 -2px 0 var(--good)}
+td.c,th.c{text-align:center}
+details>summary{list-style:none} details>summary::-webkit-details-marker{display:none} details>summary::before{content:'+ ';color:var(--brand)} details[open]>summary::before{content:'– '}
+.printhead,.printonly{display:none}
+.tickbox{display:inline-block;width:14px;height:14px;border:1.5px solid #000;border-radius:3px}
+@media print{
+  @page{margin:12mm}
+  body{background:#fff}
+  .side,.noprint,.toast,#dlg{display:none!important}
+  .app{display:block!important} main,.wrap{padding:0!important;max-width:none!important}
+  .card{border:none!important;padding:0!important;box-shadow:none!important}
+  .printhead{display:block;margin-bottom:8px} .printonly{display:table-cell!important}
+  .scroll-x{overflow:visible!important} .t th{position:static} tr{break-inside:avoid} a{color:#000;text-decoration:none}
+  .chip{border:1px solid #999;background:#fff!important;color:#000!important}
+}
+.cellin[data-k=email]{min-width:200px} .cellin[data-k=note]{min-width:160px}

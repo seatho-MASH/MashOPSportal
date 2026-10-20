@@ -28,13 +28,15 @@ export async function syncCalendar() {
     if (evs.length < 5) throw new Error(`calendar returned only ${evs.length} events — not applied`);
     let n = 0;
     for (const e of evs) {
-      await q(`insert into event (id, series_id, edition, portfolio, name, short_name, starts_on, ends_on, venue, cancelled, provisional, kind, synced_at)
-               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+      await q(`insert into event (id, series_id, edition, portfolio, name, short_name, starts_on, ends_on, venue, cancelled, provisional, kind, rooms_total, build_days, breakdown_days, synced_at)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
                on conflict (id) do update set series_id=excluded.series_id, edition=excluded.edition, portfolio=excluded.portfolio,
                  name=excluded.name, short_name=excluded.short_name, starts_on=excluded.starts_on, ends_on=excluded.ends_on,
-                 venue=excluded.venue, cancelled=excluded.cancelled, provisional=excluded.provisional, synced_at=now()`,
+                 venue=excluded.venue, cancelled=excluded.cancelled, provisional=excluded.provisional, rooms_total=excluded.rooms_total, build_days=excluded.build_days, breakdown_days=excluded.breakdown_days, synced_at=now()`,
         [e.id, e.seriesId || null, e.edition || null, e.portfolio || null, e.fullName || e.name, e.name || null,
-         e.start, e.end || e.start, e.location || null, !!e.cancelled, !!e.dateProvisional, guessKind(e)]);
+         e.start, e.end || e.start, e.location || null, !!e.cancelled, !!e.dateProvisional, guessKind(e),
+         e.roomsTotal == null || e.roomsTotal === '' ? null : (parseInt(e.roomsTotal, 10) || 0),
+         parseInt(e.buildDays, 10) || 0, parseInt(e.breakdownDays, 10) || 0]);
       n++;
     }
     await q('select ops_seed_aliases()');
@@ -56,7 +58,7 @@ export async function resolveEvent(id) {
 }
 
 export async function listEvents(user, all) {
-  const rows = await q(`select id, name, short_name, portfolio, starts_on, ends_on, venue, cancelled, provisional, kind, ops_enabled, ops_ji, ops_reg_code
+  const rows = await q(`select id, name, short_name, portfolio, starts_on, ends_on, venue, cancelled, provisional, kind, ops_enabled, ops_ji, ops_reg_code, rooms_total
                         from event ${all ? '' : 'where ops_enabled'} order by starts_on nulls last, name`);
   for (const r of rows) { r.starts_on = isoDate(r.starts_on); r.ends_on = isoDate(r.ends_on); }
   const last = await one("select finished_at, ok, error from sync_run where source='calendar' order by started_at desc limit 1");

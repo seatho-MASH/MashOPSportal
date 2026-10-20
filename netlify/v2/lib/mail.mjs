@@ -83,7 +83,9 @@ export async function drainOutbox(max = 20) {
       const tok = await graphToken();
       const r = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, { method: 'POST',
         headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' },
-        body: JSON.stringify({ message: { subject: m.subject, body: { contentType: 'HTML', content: m.html }, toRecipients: [{ emailAddress: { address: m.to_email } }] }, saveToSentItems: true }) });
+        body: JSON.stringify({ message: { subject: m.subject, body: { contentType: 'HTML', content: m.html }, toRecipients: [{ emailAddress: { address: m.to_email } }],
+          ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments.map(a => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: a.name, contentType: a.contentType, contentBytes: a.content })) } : {}) },
+          saveToSentItems: true }) });
       if (!r.ok) throw new Error(`sendMail ${r.status}: ${(await r.text()).slice(0, 200)}`);
       await q("update outbox set status='sent', sent_at=now(), last_error=null where id=$1", [m.id]);
       if (m.kind === 'schedule' && m.person_id) await q('insert into schedule_send (event_id, person_id, fingerprint, outbox_id) values ($1,$2,$3,$4)', [m.event_id, m.person_id, m.fingerprint, m.id]);

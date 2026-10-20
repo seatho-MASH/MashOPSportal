@@ -405,3 +405,111 @@ do $$ begin
     alter table scan_template add primary key (source, event_id);
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Attendees: the tabs moved over from the current portal (Oct 2026).
+-- Live HubSpot delegates are never stored; only what Ops adds about them.
+-- ---------------------------------------------------------------------------
+alter table event add column if not exists rooms_total int;          -- from the calendar
+alter table sponsor add column if not exists legacy_id text;
+alter table sponsor add column if not exists added_at timestamptz not null default now();
+alter table sponsor add column if not exists meetings_delivered int;
+create unique index if not exists sponsor_legacy_idx on sponsor (event_id, legacy_id) where legacy_id is not null;
+
+create table if not exists attendee (
+  id            uuid primary key default gen_random_uuid(),
+  event_id      text not null references event(id) on delete cascade,
+  kind          text not null check (kind in ('delegate','sponsor','speaker','staff')),
+  legacy_id     text,                      -- id in the old portal store
+  sponsor_id    uuid references sponsor(id) on delete cascade,   -- sponsor reps
+  name          text not null default '',
+  first_name    text, last_name text,
+  email         text,
+  job_title     text, company text,
+  scan_id       text,
+  id_source     text,                      -- hubspot | generated | roster
+  hubspot_id    text,
+  roster_id     text,                      -- staff: HubSpot id on the Mash staff roster
+  external      boolean not null default false,
+  dietary       text, access text,
+  session       text,                      -- speakers
+  role          text,                      -- staff
+  build         boolean not null default false,
+  breakdown     boolean not null default false,
+  note          text,
+  added_at      timestamptz not null default now(),
+  removed_at    timestamptz
+);
+create index if not exists attendee_event_idx on attendee (event_id, kind) where removed_at is null;
+create unique index if not exists attendee_legacy_idx on attendee (event_id, legacy_id) where legacy_id is not null;
+
+-- Rooms belong to a PERSON on an event: 'e:<email>' | 's:<scan id>' | 'r:<record id>'
+create table if not exists room_need (
+  event_id   text not null references event(id) on delete cascade,
+  person_key text not null,
+  by_user    text, at timestamptz not null default now(),
+  primary key (event_id, person_key)
+);
+-- Notes and "first seen" for live HubSpot delegates, keyed by contact id.
+create table if not exists delegate_note (
+  event_id text not null references event(id) on delete cascade,
+  contact_id text not null, note text not null,
+  primary key (event_id, contact_id)
+);
+create table if not exists delegate_seen (
+  event_id text not null references event(id) on delete cascade,
+  contact_id text not null,
+  first_seen date,                         -- null = was already there when tracking began
+  primary key (event_id, contact_id)
+);
+create table if not exists event_onsite (
+  event_id text primary key references event(id) on delete cascade,
+  dress_code text, arrival text, finish text, station text,
+  updated_at timestamptz not null default now()
+);
+-- Community planner
+create table if not exists community_event (
+  event_id text primary key references event(id) on delete cascade,
+  slots int not null default 10,
+  max_per_delegate int,
+  delegate_override int,
+  updated_at timestamptz not null default now()
+);
+create table if not exists community_package (
+  id       text primary key,
+  event_id text not null references event(id) on delete cascade,
+  name     text not null default '',
+  meetings int not null default 0,
+  sort     int not null default 0
+);
+create table if not exists community_assign (
+  event_id   text not null references event(id) on delete cascade,
+  sponsor_id uuid not null references sponsor(id) on delete cascade,
+  package_id text not null references community_package(id) on delete cascade,
+  primary key (event_id, sponsor_id)
+);
+-- Mash staff who can be ticked onto an event (replaces the list hard-coded in staff.mjs).
+create table if not exists staff_roster (
+  email text primary key,
+  added_by text, at timestamptz not null default now()
+);
+insert into staff_roster (email) select unnest(array[
+  'aagostini@mashmedia.net','apragnell@mashmedia.net','cbarrett@mashmedia.net','ccarter@mashmedia.net','cfewlass@mashmedia.net',
+  'cforkes@mashmedia.net','cgoodey@mashmedia.net','dkilic@mashmedia.net','ebatesproduction@mashmedia.net','eparker@mashmedia.net',
+  'fsampson@mashmedia.net','gkay@mashmedia.net','gus@mashmedia.net','hjoseph@mashmedia.net','hlnicholls@mashmedia.net',
+  'hnicholls@mashmedia.net','istirling@mashmedia.net','jagostini@mashmedia.net','jbelcher@mashmedia.net','jbrosnan@mashmedia.net',
+  'jgreen@mashmedia.net','jhammond@mashmedia.net','jlenny@mashmedia.net','jnewey@mashmedia.net','kadedeji@mashmedia.net',
+  'lagostini@mashmedia.net','lelliot@mashmedia.net','lfarnfield@mashmedia.net','magostini@mashmedia.net','mbalasingham@mashmedia.net',
+  'mhicks@mashmedia.net','mhodgson@mashmedia.net','msteventon@mashmedia.net','mswift@mashmedia.net','pcolston@mashmedia.net',
+  'rbandara@mashmedia.net','rmccrae@mashmedia.net','sboucher@mashmedia.net','sshafeeq@mashmedia.net','ssiddiqui@mashmedia.net',
+  'stevet@mashmedia.net','sthornton@mashmedia.net','treilly@mashmedia.net','ysarpong@mashmedia.net'])
+on conflict do nothing;
+create table if not exists setting (key text primary key, value jsonb not null, updated_at timestamptz not null default now());
+insert into setting (key, value) values ('community_default_packages',
+  '[{"name":"Headline","meetings":15},{"name":"Engagement","meetings":10},{"name":"Content","meetings":10}]'::jsonb) on conflict do nothing;
+-- Briefing emails carry an .ics invite.
+alter table outbox add column if not exists attachments jsonb;
+-- Old-portal audit entries keep their original time.
+alter table audit_log add column if not exists legacy boolean not null default false;
+alter table event add column if not exists build_days int not null default 0;
+alter table event add column if not exists breakdown_days int not null default 0;
