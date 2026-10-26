@@ -99,9 +99,19 @@ export function diffPortalState(before, after, by) {
   }
   const RB = before.rooms || {}, RA = after.rooms || {};
   for (const ev of new Set([...Object.keys(RB), ...Object.keys(RA)])) {
-    const a = new Set(Object.keys(RB[ev] || {})), b = new Set(Object.keys(RA[ev] || {}));
+    const on_ = (m) => new Set(Object.keys(m || {}).filter(k => m[k]));   // unticked rooms are stored as false
+    const a = on_(RB[ev]), b = on_(RA[ev]);
     const on = [...b].filter(k => !a.has(k)).length, off = [...a].filter(k => !b.has(k)).length;
     if (on || off) push(ev, [{ by, area: 'Rooms', action: 'changed', item: 'Room allocation', field: 'rooms', from: a.size, to: b.size }]);
+  }
+  const TB = before.travel || {}, TA = after.travel || {};
+  for (const ev of new Set([...Object.keys(TB), ...Object.keys(TA)])) {
+    const cnt = (m, f) => Object.values(m || {}).filter(t => t && t[f]).length;
+    const ar = cnt(TB[ev], 'r'), br = cnt(TA[ev], 'r'), ab = cnt(TB[ev], 'b'), bb = cnt(TA[ev], 'b');
+    const out = [];
+    if (ar !== br) out.push({ by, area: 'Travel', action: 'changed', item: 'Travel required', field: 'travel', from: ar, to: br });
+    if (ab !== bb) out.push({ by, area: 'Travel', action: 'changed', item: 'Travel booked', field: 'travel', from: ab, to: bb });
+    push(ev, out);
   }
   const NB = before.notes || {}, NA = after.notes || {};
   for (const ev of Object.keys(NA)) {

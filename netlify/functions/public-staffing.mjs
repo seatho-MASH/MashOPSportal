@@ -47,10 +47,11 @@ export default async (req) => {
     const isOrphan = key => typeOf(key) ? false : (key.startsWith('e:') ? De.has(key.slice(2)) : key.startsWith('s:') ? Ds.has(key.slice(2)) : key.startsWith('r:') ? Di.has(key.slice(2)) : Di.has(key));
     return { typeOf, isOrphan };
   };
-  const roomsReq = k => { const ctx = roomCtx(k); return Object.keys(roomsAll[k] || {}).filter(key => !ctx.isOrphan(key)).length; };
+  // Unticked rooms are stored as false (see index.html setRoom), so only true values count.
+  const roomsReq = k => { const ctx = roomCtx(k), m = roomsAll[k] || {}; return Object.keys(m).filter(key => m[key] && !ctx.isOrphan(key)).length; };
   const roomsByType = k => {
     const ctx = roomCtx(k), by = { Delegate: 0, Sponsor: 0, Speaker: 0, Staff: 0 };
-    for (const key of Object.keys(roomsAll[k] || {})) { if (ctx.isOrphan(key)) continue; by[ctx.typeOf(key) || 'Delegate']++; }
+    for (const key of Object.keys(roomsAll[k] || {})) { if (!roomsAll[k][key] || ctx.isOrphan(key)) continue; by[ctx.typeOf(key) || 'Delegate']++; }
     return by;
   };
   // The calendar asks with its own ids; a few Ops events are stored under older ids.

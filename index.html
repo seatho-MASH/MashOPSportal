@@ -256,7 +256,7 @@ const S={
   events:FALLBACK_EVENTS, counts:{}, selected:null, tab:'delegates',
   brandFilter:new Set(), search:'',
   attendees:{}, loadingAttendees:false, staffRoster:null,
-  store:{sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{}}, demo:false,
+  store:{sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{},travel:{}}, demo:false,
 };
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -284,7 +284,7 @@ function _lists(sv,lo,deep){sv=sv||{};lo=lo||{};const o={...sv};for(const k of n
 function _maps(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)]))o[k]={...(sv[k]||{}),...(lo[k]||{})};return o;}
 function _seenM(sv,lo){sv=sv||{};lo=lo||{};const o={};for(const k of new Set([...Object.keys(sv),...Object.keys(lo)])){const a=sv[k]||{},b=lo[k]||{};o[k]={baseline:{...(a.baseline||{}),...(b.baseline||{})},added:{...(a.added||{}),...(b.added||{})}};}return o;}
 function _rooms(sv,lo){sv=sv||{};lo=lo||{};const o={};new Set([...Object.keys(sv),...Object.keys(lo)]).forEach(k=>{o[k]=Object.assign({},sv[k]||{},lo[k]||{});});return o;}
-function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),staff:_lists(sv.staff,lo.staff,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes),onsite:Object.assign({},sv.onsite||{},lo.onsite||{}),rooms:_rooms(sv.rooms,lo.rooms)};}
+function mergeStore(sv,lo){sv=sv||{};lo=lo||{};return {sponsors:_lists(sv.sponsors,lo.sponsors,true),speakers:_lists(sv.speakers,lo.speakers,false),delegates:_lists(sv.delegates,lo.delegates,false),staff:_lists(sv.staff,lo.staff,false),seen:_seenM(sv.seen,lo.seen),notes:_maps(sv.notes,lo.notes),onsite:Object.assign({},sv.onsite||{},lo.onsite||{}),rooms:_rooms(sv.rooms,lo.rooms),travel:_rooms(sv.travel,lo.travel)};}
 function isEditing(){const ae=document.activeElement;return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&$('#tabBody')&&$('#tabBody').contains(ae));}
 function sortRows(rows,mode){const r=[...rows];
   if(mode==='added-new')r.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
@@ -322,8 +322,8 @@ async function loadSummary(){
 }
 
 async function loadStore(){
-  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; S.store.staff??={}; S.store.onsite??={}; S.store.rooms??={}; }
-  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{},onsite:{},rooms:{}}; }
+  try{ S.store=await api('/api/store'); S.store.sponsors??={}; S.store.speakers??={}; S.store.delegates??={}; S.store.seen??={}; S.store.notes??={}; S.store.staff??={}; S.store.onsite??={}; S.store.rooms??={}; S.store.travel??={}; }
+  catch(e){ /* demo: keep empty local store */ S.store={sponsors:{},speakers:{},delegates:{},seen:{},notes:{},staff:{},onsite:{},rooms:{},travel:{}}; }
   loadRoomTotals();
 }
 let saveTimer,saving=false;
@@ -368,8 +368,9 @@ function roomsMap(id){S.store.rooms??={};return (S.store.rooms[id]??={});}
 // only counts once and ticking them in one list shows in the other). Falls back to scan ID then record id.
 function personKey(rec){ if(!rec)return ''; const e=String(rec.email||'').trim().toLowerCase(); if(e)return 'e:'+e; const s=(typeof scanOf==='function'?scanOf(rec):rec.scanId)||''; if(s)return 's:'+s; return 'r:'+(rec.id||''); }
 function roomOn(id,rec){return !!roomsMap(id)[personKey(rec)];}
-function setRoom(id,rec,on){const m=roomsMap(id),k=personKey(rec);if(on)m[k]=true;else delete m[k];queueSave();refreshRoomBars();}
-function clearRoom(id,rec){const m=roomsMap(id),k=personKey(rec);if(m[k])delete m[k];}
+// Off is stored as false, not deleted: saves merge with the server copy, which would bring a deleted key back.
+function setRoom(id,rec,on){const m=roomsMap(id),k=personKey(rec);m[k]=!!on;queueSave();refreshRoomBars();}
+function clearRoom(id,rec){const m=roomsMap(id),k=personKey(rec);if(m[k])m[k]=false;clearTravel(id,rec);}
 // everyone on the event across all lists, split active vs removed
 function eventPeople(id){ const active=[],deleted=[];
   (S.attendees[id]||[]).forEach(a=>active.push(a));
@@ -382,22 +383,43 @@ function eventPeople(id){ const active=[],deleted=[];
 // keys whose only owner has been removed (so their room tick must not count)
 function orphanKeys(id){ const p=eventPeople(id); const act=new Set(p.active.map(personKey)); const del=new Set();
   p.deleted.forEach(r=>{ const k=personKey(r); if(!act.has(k))del.add(k); if(r.id&&!act.has('r:'+r.id))del.add(r.id); }); return del; }
-function roomsReq(id){ const orphan=orphanKeys(id); return Object.keys(roomsMap(id)).filter(k=>!orphan.has(k)).length; }
+function roomsReq(id){ const orphan=orphanKeys(id),m=roomsMap(id); return Object.keys(m).filter(k=>m[k]&&!orphan.has(k)).length; }
 // convert old record-id keys to person keys (preserving existing ticks & de-duping), drop removed people
 function migrateRooms(id){ if(!id)return; const m=roomsMap(id), p=eventPeople(id); const byId={};
   p.active.concat(p.deleted).forEach(r=>{ if(r.id)byId[r.id]=r; });
   const actKeys=new Set(p.active.map(personKey)); const orphan=orphanKeys(id); let changed=false;
   Object.keys(m).forEach(k=>{
-    if(/^[esr]:/.test(k)){ if(orphan.has(k)){ delete m[k]; changed=true; } return; }
+    if(!m[k])return;
+    if(/^[esr]:/.test(k)){ if(orphan.has(k)){ m[k]=false; changed=true; } return; }
     const rec=byId[k];
-    if(rec){ const nk=personKey(rec); if(actKeys.has(nk)){ if(nk!==k)m[nk]=true; } delete m[k]; changed=true; }
-    else if(orphan.has(k)){ delete m[k]; changed=true; }
+    if(rec){ const nk=personKey(rec); if(actKeys.has(nk)){ if(nk!==k)m[nk]=true; } m[k]=false; changed=true; }
+    else if(orphan.has(k)){ m[k]=false; changed=true; }
   });
   if(changed)queueSave();
 }
 function calIdOf(id){return ((S.events||[]).find(e=>e.id===id)||{}).calId||id;}
 function roomsTotal(id){const k=ROOM_TOTALS[id]!=null?id:calIdOf(id);return ROOM_TOTALS[k]!=null?ROOM_TOTALS[k]:null;}
 function roomBox(id,rec){const cb=el('input');cb.type='checkbox';cb.checked=roomOn(id,rec);cb.title='Room required';cb.onchange=()=>setRoom(id,rec,cb.checked);return cb;}
+/* ---------- travel (per person, like rooms): required / booked ---------- */
+function travelMap(id){S.store.travel??={};return (S.store.travel[id]??={});}
+function travelOf(id,rec){return travelMap(id)[personKey(rec)]||{};}
+function setTravel(id,rec,field,on){const m=travelMap(id),k=personKey(rec),t={...(m[k]||{})};
+  t[field]=on;if(field==='b'&&on)t.r=true;if(field==='r'&&!on)t.b=false;   // booked implies required
+  m[k]={r:!!t.r,b:!!t.b};queueSave();refreshTravelBars();return m[k];}   // never deleted, see setRoom
+function clearTravel(id,rec){const m=travelMap(id),k=personKey(rec);if(m[k])m[k]={r:false,b:false};}
+function travelBoxes(id,rec){
+  const mk=(f,lbl)=>{const cb=el('input');cb.type='checkbox';cb.dataset.tf=f;cb.title=lbl;cb.setAttribute('aria-label',lbl+(rec.name?' — '+rec.name:''));cb.checked=!!travelOf(id,rec)[f];return cb;};
+  const r=mk('r','Travel required'),b=mk('b','Travel booked');
+  const sync=t=>{r.checked=!!t.r;b.checked=!!t.b;};
+  r.onchange=()=>sync(setTravel(id,rec,'r',r.checked));b.onchange=()=>sync(setTravel(id,rec,'b',b.checked));
+  return {r,b};}
+function travelTd(tr,id,rec){const t=travelBoxes(id,rec);const a=el('td');a.style.textAlign='center';a.appendChild(t.r);const b=el('td');b.style.textAlign='center';b.appendChild(t.b);tr.append(a,b);}
+function travelCounts(id){const orphan=orphanKeys(id);let r=0,b=0;Object.entries(travelMap(id)).forEach(([k,t])=>{if(orphan.has(k))return;if(t.r)r++;if(t.b)b++;});return {r,b};}
+function travelSummaryHTML(id){const c=travelCounts(id),left=c.r-c.b;
+  return '🚆 <strong>'+c.r+'</strong> need travel · <strong>'+c.b+'</strong> booked'+(c.r?(left>0?' · <span style="color:#c0392b"><strong>'+left+'</strong> still to book</span>':' · <span style="color:var(--good)">all booked</span>'):'');}
+function travelBar(id){const d=el('div','banner');d.classList.add('travelbar');d.innerHTML=travelSummaryHTML(id);d.style.background='var(--bg)';return d;}
+function refreshTravelBars(){if(!S.selected)return;document.querySelectorAll('.travelbar').forEach(b=>{b.innerHTML=travelSummaryHTML(S.selected);});}
+const travelCols=id=>[{label:'Travel required',get:r=>travelOf(id,r).r?'Yes':''},{label:'Travel booked',get:r=>travelOf(id,r).b?'Yes':''}];
 function roomSummaryHTML(id){const alloc=roomsReq(id),tot=roomsTotal(id);
   let s='🛏 <strong>'+alloc+'</strong> room'+(alloc===1?'':'s')+' allocated';
   if(tot!=null){const over=alloc>tot;s+=' / <strong style="'+(over?'color:#c0392b':'')+'">'+tot+'</strong> total available'+(over?' <span style="color:#c0392b">(over by '+(alloc-tot)+')</span>':(alloc<tot?' <span class="muted">('+(tot-alloc)+' free)</span>':''));}
@@ -578,7 +600,7 @@ function renderDelegates(box){
   const id=S.selected;
   box.appendChild(el('div','banner','Delegates flow in automatically once their <strong>Joining Instructions are signed</strong> in HubSpot (approvals stay with marketing). You can also add walk-ins manually below.'));
   box.appendChild(delegateAddCard(box,id));
-  box.appendChild(roomBar(id));
+  box.appendChild(roomBar(id));box.appendChild(travelBar(id));
   if(S.loadingAttendees&&!S.attendees[id]){box.appendChild(el('div','empty','<span class="spinner"></span> Loading attendees from HubSpot…'));return;}
   const all=allDelegates(id);
   const tb=el('div','toolbar');
@@ -589,7 +611,7 @@ function renderDelegates(box){
     {label:'Type',key:'type'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'First name',key:'firstname'},{label:'Last name',key:'lastname'},
     {label:'Email',key:'email'},{label:'Company',key:'company'},{label:'Job title',key:'jobtitle'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Notes',get:r=>delNote(id,r.id)}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},...travelCols(id),{label:'Notes',get:r=>delNote(id,r.id)}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload from HubSpot';
   rf.onclick=async()=>{delete S.attendees[id];await loadAttendees(id);updateTabCounts();renderDelegates(box);};
   tb.append(si,sortSelect(delSort,v=>{delSort=v;renderDelegates(box);}),rc,ex,rf);
@@ -597,7 +619,7 @@ function renderDelegates(box){
   if(!all.length){box.appendChild(el('div','empty','<div class="big">No confirmed delegates yet</div>They will appear here as joining instructions are signed, or add walk-ins above.'));return;}
   const rows=sortRows(all,delSort);
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th>Notes</th><th></th></tr></thead>';
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th title="Travel required" style="text-align:center">Travel req</th><th title="Travel booked" style="text-align:center">Booked</th><th>Notes</th><th></th></tr></thead>';
   const tbody=el('tbody');
   rows.forEach(a=>{
     const tr=el('tr');tr.dataset.s=(a.name+' '+a.company+' '+a.jobtitle+' '+a.email).toLowerCase();
@@ -608,8 +630,9 @@ function renderDelegates(box){
       <td>${esc(a.company)||'<span class=muted>—</span>'}</td>
       <td>${a.email?`<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>`:'<span class=muted>—</span>'}</td>
       <td>${esc(a.dietary)||'<span class=muted>—</span>'}</td>
-      <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td class="roomCell" style="text-align:center"></td><td class="noteCell"></td><td></td>`;
+      <td>${esc(a.accessibility)||'<span class=muted>—</span>'}</td><td class="roomCell" style="text-align:center"></td><td class="trR" style="text-align:center"></td><td class="trB" style="text-align:center"></td><td class="noteCell"></td><td></td>`;
     tr.querySelector('.roomCell').appendChild(roomBox(id,a));
+    {const t=travelBoxes(id,a);tr.querySelector('.trR').appendChild(t.r);tr.querySelector('.trB').appendChild(t.b);}
     tr.querySelector('.noteCell').appendChild(cellInput(delNote(id,a.id),v=>setDelNote(id,a.id,v),'Add note…'));
     if(a.manual){const x=el('button','btn sm ghost','✕');x.onclick=()=>{(S.store.delegates[id]||[]).forEach(y=>{if(y.id===a.id)y.deleted=true;});clearRoom(id,a);queueSave();updateTabCounts();renderDelegates(box);};tr.lastElementChild.appendChild(x);}
     tbody.appendChild(tr);
@@ -648,10 +671,10 @@ function renderSponsors(box){
       {label:'Type',get:()=>'Sponsor'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
       {label:'Sponsor',key:'sponsor'},{label:'Tier',key:'tier'},
       {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},
-      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Notes',key:'note'}]));
+      {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},...travelCols(id),{label:'Notes',key:'note'}]));
   };
   tb.appendChild(ex);box.appendChild(tb);
-  box.appendChild(roomBar(id));
+  box.appendChild(roomBar(id));box.appendChild(travelBar(id));
   if(!_act.length){box.appendChild(el('div','empty','<div class="big">No sponsors added yet</div>Add your event sponsors above, then log the people each is sending.'));return;}
   [..._act].sort((a,b)=>(a.company||'').localeCompare(b.company||'')).forEach(sp=>{
     const card=el('div','sponsor');
@@ -673,6 +696,7 @@ function renderSponsors(box){
       const mk=(ph,key,flex)=>{const i=el('input');i.placeholder=ph;i.value=c[key]||'';i.style.flex=flex;i.oninput=()=>{c[key]=i.value;queueSave();};return i;};
       row.append(mk('Job title','jobtitle','1 1 120px'),mk('Email','email','1 1 150px'),mk('Dietary','dietary','1 1 110px'),mk('Accessibility','accessibility','1 1 110px'),mk('Notes','note','1 1 140px'));
       const _rl=el('label');_rl.style.cssText='display:flex;align-items:center;gap:4px;font-size:12px;color:var(--mut);white-space:nowrap';_rl.append(roomBox(id,c),document.createTextNode('Room'));row.appendChild(_rl);
+      {const t=travelBoxes(id,c);const lr=el('label');lr.style.cssText=_rl.style.cssText;lr.append(t.r,document.createTextNode('Travel req'));const lb=el('label');lb.style.cssText=_rl.style.cssText;lb.append(t.b,document.createTextNode('Travel booked'));row.append(lr,lb);}
       const x=el('button','btn sm ghost danger','Remove');
       x.onclick=()=>{c.deleted=true;clearRoom(id,c);queueSave();updateTabCounts();renderSponsors(box);};
       row.appendChild(x);a.append(head,row);card.appendChild(a);
@@ -715,7 +739,7 @@ function renderSpeakers(box){
     {label:'Type',get:()=>'Speaker'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},
     {label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},
     {label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Session',key:'session'},
-    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Notes',key:'note'}]));
+    {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},...travelCols(id),{label:'Notes',key:'note'}]));
   toggle.appendChild(ex);
   box.appendChild(toggle);
   if(spkMode==='single'){
@@ -764,14 +788,15 @@ function renderSpeakers(box){
     fileRow.append(file,btn);
     add.append(ta,fileRow);box.appendChild(add);
   }
-  box.appendChild(roomBar(id));
+  box.appendChild(roomBar(id));box.appendChild(travelBar(id));
   if(!_act.length){box.appendChild(el('div','empty','<div class="big">No speakers yet</div>Add them individually or bulk-upload a list.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th>Notes</th><th></th></tr></thead>';
+  t.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Added</th><th>Job title</th><th>Company</th><th>Email</th><th>Session</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th title="Travel required" style="text-align:center">Travel req</th><th title="Travel booked" style="text-align:center">Booked</th><th>Notes</th><th></th></tr></thead>';
   const tbody=el('tbody');
   sortRows(_act,spkSort).forEach(s=>{
     const tr=el('tr');
-    tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td class="c-ses"></td><td class="c-di"></td><td class="c-ac"></td><td class="c-room" style="text-align:center"></td><td class="c-note"></td>`;
+    tr.innerHTML=`<td><strong>${esc(s.name)}</strong></td><td class="rid">${esc(scanOf(s))||'<span class=muted>—</span>'}</td><td>${fmtAdded(s.addedAt)||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'}</td><td class="c-ses"></td><td class="c-di"></td><td class="c-ac"></td><td class="c-room" style="text-align:center"></td><td class="trR" style="text-align:center"></td><td class="trB" style="text-align:center"></td><td class="c-note"></td>`;
+    {const t=travelBoxes(id,s);tr.querySelector('.trR').appendChild(t.r);tr.querySelector('.trB').appendChild(t.b);}
     const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(s[key],v=>{s[key]=v;queueSave();}));};
     bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-ses','session');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','note');
     tr.querySelector('.c-room').appendChild(roomBox(id,s));
@@ -825,6 +850,7 @@ function renderCheckin(box){
   const all=sortRows(buildCheckinRows(id),chkSort);
   box.appendChild(el('div','banner','Every attendee for this event in one place — delegates, sponsor reps and speakers — with Scan IDs for badging. Use <strong>Print</strong> for a paper check-in sheet or <strong>Export CSV</strong> for badging/registration.'));
   const counts=all.reduce((m,r)=>{m[r.type]=(m[r.type]||0)+1;return m;},{});
+  box.appendChild(travelBar(id));
   const tb=el('div','toolbar');
   const si=el('input','grow');si.placeholder='Search everyone…';si.value=chkSearch;
   const rc=el('div','muted','');
@@ -835,7 +861,7 @@ function renderCheckin(box){
     {label:'Type',key:'type'},{label:'Scan ID',key:'scanId'},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},
     {label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},
     {label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},
-    {label:'Room required',get:r=>roomOn(id,r)?'Yes':''},
+    {label:'Room required',get:r=>roomOn(id,r)?'Yes':''},...travelCols(id),
     {label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},
     {label:'Notes',key:'notes'},{label:'Detail',key:'note'}]));
   tb.append(pr,ex);
@@ -844,7 +870,7 @@ function renderCheckin(box){
   box.appendChild(ph);
   if(!all.length){box.appendChild(el('div','empty','<div class="big">Nobody to list yet</div>Delegates, sponsor attendees and speakers will appear here as they are added.'));return;}
   const wrap=el('div','tablewrap');const t=el('table');
-  t.innerHTML='<thead><tr><th style="width:34px">In</th><th>Name</th><th>Scan ID</th><th>Added</th><th>Type</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th>Notes</th><th>Detail</th></tr></thead>';
+  t.innerHTML='<thead><tr><th style="width:34px">In</th><th>Name</th><th>Scan ID</th><th>Added</th><th>Type</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th title="Room required" style="text-align:center">Room</th><th title="Travel required" style="text-align:center">Travel req</th><th title="Travel booked" style="text-align:center">Booked</th><th>Notes</th><th>Detail</th></tr></thead>';
   const tbody=el('tbody');
   all.forEach(r=>{
     const tr=el('tr');tr.dataset.s=(r.name+' '+r.company+' '+r.jobtitle+' '+r.type).toLowerCase();
@@ -858,6 +884,8 @@ function renderCheckin(box){
       <td>${esc(r.dietary)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.accessibility)||'<span class=muted>—</span>'}</td>
       <td style="text-align:center">${roomOn(id,r)?'🛏':'<span class=muted>—</span>'}</td>
+      <td style="text-align:center">${travelOf(id,r).r?'Yes':'<span class=muted>—</span>'}</td>
+      <td style="text-align:center">${travelOf(id,r).b?'Yes':(travelOf(id,r).r?'<strong style="color:#c0392b">No</strong>':'<span class=muted>—</span>')}</td>
       <td>${esc(r.notes)||'<span class=muted>—</span>'}</td>
       <td>${esc(r.note)||'<span class=muted>—</span>'}</td>`;
     tbody.appendChild(tr);
@@ -931,13 +959,13 @@ function renderStaff(box){
   const si=el('input','grow');si.placeholder='Search staff by name, role, email…';si.value=stfSearch;
   const rc=el('div','muted','');
   const ex=el('button','btn sm','Export attending');
-  ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Role',key:'role'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},{label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},{label:'Notes',key:'note'}]));
+  ex.onclick=()=>download(id+'-staff.csv',toCSV(attending(),[{label:'Type',get:()=>'Staff'},{label:'Scan ID',get:r=>scanOf(r)},{label:'Added',get:r=>fmtAdded(r.addedAt)},{label:'Name',key:'name'},{label:'Job title',key:'jobtitle'},{label:'Company',key:'company'},{label:'Email',key:'email'},{label:'Dietary requirements',key:'dietary'},{label:'Accessibility requirements',key:'accessibility'},{label:'Role',key:'role'},{label:'Room required',get:r=>roomOn(id,r)?'Yes':''},...travelCols(id),{label:'Build',get:r=>r.build?'Yes':''},{label:'Breakdown',get:r=>r.breakdown?'Yes':''},{label:'Notes',key:'note'}]));
   const exAll=el('button','btn sm','Export all staff');
   exAll.onclick=()=>download('mash-staff-roster.csv',toCSV(sortRows(S.staffRoster||[],stfSort),[{label:'Name',key:'name'},{label:'Scan ID',key:'scanId'},{label:'Job title',key:'jobtitle'},{label:'Email',key:'email'},{label:'Dietary',key:'dietary'},{label:'Accessibility',key:'accessibility'}]));
   const rf=el('button','btn sm ghost','↻');rf.title='Reload staff from HubSpot';rf.onclick=async()=>{await loadStaff(true);renderStaff(box);};
   tb.append(si,sortSelect(stfSort,v=>{stfSort=v;renderStaff(box);}),rc,ex,exAll,rf);box.appendChild(tb);
   // attending (editable) section — rebuildable
-  box.appendChild(roomBar(id));
+  box.appendChild(roomBar(id));box.appendChild(travelBar(id));
   const attWrap=el('div');box.appendChild(attWrap);
   function renderAtt(){
     attWrap.innerHTML='';
@@ -945,11 +973,12 @@ function renderStaff(box){
     if(!att.length)return;
     attWrap.appendChild(el('div','grouphdr','ATTENDING THIS EVENT'));
     const aw=el('div','tablewrap');const at=el('table');
-    at.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Role</th><th title="Needed for build days">Build</th><th title="Needed for breakdown days">Breakdown</th><th title="Room required" style="text-align:center">Room</th><th></th></tr></thead>';
+    at.innerHTML='<thead><tr><th>Name</th><th>Scan ID</th><th>Job title</th><th>Company</th><th>Email</th><th>Dietary</th><th>Accessibility</th><th>Role</th><th title="Needed for build days">Build</th><th title="Needed for breakdown days">Breakdown</th><th title="Room required" style="text-align:center">Room</th><th title="Travel required" style="text-align:center">Travel req</th><th title="Travel booked" style="text-align:center">Booked</th><th></th></tr></thead>';
     const atb=el('tbody');
     sortRows(att,stfSort).forEach(st=>{
       const tr=el('tr');
-      tr.innerHTML=`<td><strong>${esc(st.name)}</strong>${st.external?' <span class="pill">external</span>':''}</td><td class="rid">${esc(scanOf(st))||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${st.email?`<a href="mailto:${esc(st.email)}">${esc(st.email)}</a>`:'—'}</td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td><td class="c-build" style="text-align:center"></td><td class="c-break" style="text-align:center"></td><td class="c-room" style="text-align:center"></td>`;
+      tr.innerHTML=`<td><strong>${esc(st.name)}</strong>${st.external?' <span class="pill">external</span>':''}</td><td class="rid">${esc(scanOf(st))||'—'}</td><td class="c-job"></td><td class="c-co"></td><td>${st.email?`<a href="mailto:${esc(st.email)}">${esc(st.email)}</a>`:'—'}</td><td class="c-di"></td><td class="c-ac"></td><td class="c-note"></td><td class="c-build" style="text-align:center"></td><td class="c-break" style="text-align:center"></td><td class="c-room" style="text-align:center"></td><td class="trR" style="text-align:center"></td><td class="trB" style="text-align:center"></td>`;
+      {const t=travelBoxes(id,st);tr.querySelector('.trR').appendChild(t.r);tr.querySelector('.trB').appendChild(t.b);}
       const bind=(sel,key)=>{tr.querySelector(sel).appendChild(cellInput(st[key],v=>{st[key]=v;queueSave();}));};
       bind('.c-job','jobtitle');bind('.c-co','company');bind('.c-di','dietary');bind('.c-ac','accessibility');bind('.c-note','role');
       const chk=(sel,key)=>{const cb=el('input');cb.type='checkbox';cb.checked=!!st[key];cb.onchange=()=>{st[key]=cb.checked;queueSave();};tr.querySelector(sel).appendChild(cb);};chk('.c-build','build');chk('.c-break','breakdown');
